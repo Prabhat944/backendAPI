@@ -23,6 +23,11 @@ connectDB();
 app.use(express.json());
 app.use(cors());
 // Routes
+// Logging middleware (Optional for debugging)
+app.use((req, res, next) => {
+  console.log("Incoming Request Body:", req.body);
+  next();
+});
 app.use('/api/v1/auth', authRoutes)
 app.use('/api/v1/cricket', cricketRoutes);
 app.use('/api/v1/user', userRoutes)
