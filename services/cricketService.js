@@ -11,7 +11,7 @@ exports.upcomingMatchesList = async () => {
       offset: 0,
     },
   });
-  // console.log('Upcoming Matches:', response.data.data);
+  console.log('Upcoming Matches:', response.data);
   return response.data.data;
 };
 
@@ -22,6 +22,7 @@ exports.recentMatchesList = async () => {
       offset: 0,
     },
   });
+  console.log('responseData', response.data);
   return response.data;
 };
 
@@ -61,10 +62,23 @@ exports.recentMatchUpdatedScoreCard = async (matchId) => {
   return response.data;
 }
 exports.getMatchById = async (matchId) => {
-  const response = await axios.get(`${BASE_URL}/match/${matchId}`, {
+  console.log('matchId', matchId);
+  const response = await axios.get(`${BASE_URL}/match_info`, {
     params: {
       apikey: API_KEY,
+      id: matchId
     },
   });
+  return response.data;
+};
+
+exports.getUpcomingSeries = async () => {
+  const response = await axios.get(`${BASE_URL}/series`, {
+    params: {
+      apikey: API_KEY,
+      offset: 0,
+    },
+  });
+  console.log('Sereis Squad:', response.data);
   return response.data;
 };

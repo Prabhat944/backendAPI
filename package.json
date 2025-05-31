@@ -20,7 +20,9 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.14.3",
     "node-cron": "^4.0.5",
-    "nodemailer": "^7.0.3"
+    "nodemailer": "^7.0.3",
+    "redis": "^5.1.0",
+    "twilio": "^5.6.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

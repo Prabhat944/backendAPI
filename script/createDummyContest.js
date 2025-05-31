@@ -1,18 +1,14 @@
-// scripts/createDummyContest.js
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const Contest = require('../models/Contest');
-// const Match = require('../models/Match'); // or wherever your Match model is
 
-dotenv.config(); // if you're using .env for DB_URI
+dotenv.config();
 
 async function createDummyContest() {
   try {
-    await mongoose.connect(process.env.MONGO_URI); // make sure .env has MONGO_URI
+    await mongoose.connect(process.env.MONGO_URI);
 
-    // 🧪 Find any match to use its ID
-    const match = "7de732eb-6821-492b-ace7-3f385b852719"; // or hardcode the matchId if you already have one
-    // if (!match) throw new Error('No match found in DB');
+    const match = "96127afb-1268-47ad-b4d0-62112b4709b2";
 
     const contest = new Contest({
       matchId: match,
@@ -22,6 +18,10 @@ async function createDummyContest() {
       prize: 1000,
       title: 'Test Contest #1',
       participants: [],
+      prizeBreakupType: 'winnerTakesAll',  // <-- Set winner takes all here
+      // Optionally, if you want a custom split, use this:
+      // prizeBreakupType: 'top3Split',
+      // customPrizeBreakup: [70, 20, 10],
     });
 
     await contest.save();

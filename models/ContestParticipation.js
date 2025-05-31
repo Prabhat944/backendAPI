@@ -16,10 +16,25 @@ const contestParticipationSchema = new mongoose.Schema({
     required: true
   },
   teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', required: true },
-
   joinedAt: {
     type: Date,
     default: Date.now
+  },
+  totalPoints: {
+    type: Number,
+    default: 0
+  },
+  rank: {
+    type: Number,
+    default: null
+  },
+  isWinner: {
+    type: Boolean,
+    default: false
+  },
+  prizeWon: {
+    type: Number,
+    default: 0,
   }
 });
 

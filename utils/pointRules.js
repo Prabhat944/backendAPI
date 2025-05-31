@@ -17,13 +17,18 @@ const pointRules = {
         maiden: 4,
         "4w": 4,
         "5w": 8,
-        economyRate: null // Not applicable
+        economyRate: null, // Not applicable
+        lbwBonus: 8,
+        bowledBonus: 8,
+        caughtAndBowledBonus: 8
+  
       },
       fielding: {
         catch: 8,
         stumping: 12,
         runOutThrower: 6,
-        runOutCatcher: 6
+        runOutCatcher: 6,
+        runOutDirectHit: 12
       }
     },
   
@@ -43,23 +48,31 @@ const pointRules = {
         ]
       },
       bowling: {
-        wicket: 12,
+        wicket: 25,
         maiden: 4,
         "3w": 4,
         "5w": 8,
         economyRate: [
           { below: 4, minOvers: 5, points: 3 },
           { above: 7, minOvers: 5, points: -2 }
-        ]
+        ],
+        lbwBonus: 8,
+        bowledBonus: 8,
+        caughtAndBowledBonus: 8
       },
       fielding: {
         catch: 6,
         stumping: 6,
-        runOut: 6
+        runOutThrower: 4,
+        runOutCatcher: 4,
+        runOutDirectHit: 8  
       }
     },
   
     T20: {
+      player_in: {
+        live: 4
+      },
       batting: {
         run: 1,
         boundaryBonus: 1,
@@ -78,12 +91,17 @@ const pointRules = {
         economyRate: [
           { below: 6, minOvers: 2, points: 3 },
           { above: 10, minOvers: 2, points: -2 }
-        ]
+        ],
+        lbwBonus: 8,
+        bowledBonus: 8,
+        caughtAndBowledBonus: 8
       },
       fielding: {
         catch: 8,
         stumping: 12,
-        runOut: 12
+        runOutThrower: 6,
+        runOutCatcher: 6,
+        runOutDirectHit: 12    
       }
     },
   
@@ -106,12 +124,16 @@ const pointRules = {
         economyRate: [
           { below: 6, minOvers: 1, points: 3 },
           { above: 10, minOvers: 1, points: -2 }
-        ]
+        ],
+        lbwBonus: 8,
+        bowledBonus: 8,
+        caughtAndBowledBonus: 8
       },
       fielding: {
-        catch: 10,
-        stumping: 10,
-        runOut: 10
+        catch: 8,
+        stumping: 12,
+        runOutThrower: 5,
+        runOutDirectHit: 10
       }
     }
   };

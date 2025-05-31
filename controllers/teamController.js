@@ -1,6 +1,7 @@
 const cricketDataService = require('../services/cricketService');
 const Team = require('../models/TeamSchema');
 const { cloneTeamUtil } = require('../utils/teamUtils');
+const { getPlayerSelectionStats } = require('./statsController');
 
 
 exports.createTeam = async (req, res) => {
@@ -89,7 +90,8 @@ exports.createTeam = async (req, res) => {
         viceCaptain: viceCaptainId
       });
       await newTeam.save();
-  
+      await getPlayerSelectionStats(newTeam.matchId);
+
       res.status(201).json({ message: 'Team created successfully', team: newTeam });
     } catch (err) {
       console.error('❌ Error creating team:', err);

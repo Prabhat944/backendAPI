@@ -6,6 +6,7 @@ const { OAuth2Client } = require('google-auth-library');
 const sendEmail = require('../utils/sendEmail');
 const generateReferCode = require('../utils/referCode');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const { sendOTPViaSMS } = require('../utils/sendSms'); // adjust path if needed
 const axios = require('axios');
 
 
@@ -15,6 +16,7 @@ exports.signup = async (req, res) => {
   const { name, email, mobile, password, referCode } = req.body;
   try {
     const existingUser = await User.findOne({ $or: [{ email }, { mobile }] });
+    console.log('Existing User:', existingUser);
     if (existingUser) return res.status(400).json({ message: 'User already exists' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -96,18 +98,25 @@ exports.resetPassword = async (req, res) => {
     res.status(400).json({ message: 'Invalid or expired token' });
   }
 };
+
+//Send OTP
 exports.sendOtp = async (req, res) => {
   const { mobile, referCode } = req.body;
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
   try {
+    // Save OTP to DB
     await OTP.findOneAndUpdate(
       { mobile },
       { otp, createdAt: new Date() },
       { upsert: true, new: true }
     );
 
-    let user = await User.findOne({ mobile });
+    // Send OTP via SMS
+    await sendOTPViaSMS(mobile, otp);
 
+    // Create user if not exists
+    let user = await User.findOne({ mobile });
     if (!user) {
       user = new User({
         mobile,
@@ -126,15 +135,17 @@ exports.sendOtp = async (req, res) => {
       }
 
       await user.save();
-    } else {
-      console.log('🔍 User already exists:', user.mobile);
     }
+
     res.json({ message: 'OTP sent successfully' });
 
   } catch (err) {
-    res.status(500).json({ message: 'Failed to send OTP' });
+    console.error('❌ sendOtp Error:', err);
+    res.status(500).json({ message: err.message || 'Failed to send OTP' });
   }
 };
+
+
   // Verify OTP 
 exports.verifyOtp = async (req, res) => {
     const { mobile, otp } = req.body;
