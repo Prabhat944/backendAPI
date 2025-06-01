@@ -169,7 +169,19 @@ async function createDummyContest(matchId) {
   }
 }
 
+async function getContestsByMatchId(matchId) {
+  try {
+    const contests = await Contest.find({ matchId: matchId });
+    console.log(`✅ Found ${contests.length} contests for matchId: ${matchId}`);
+    return contests;
+  } catch (err) {
+    console.error('❌ Error fetching contests:', err.message);
+    throw err;
+  }
+}
+
 module.exports = {
   calculateContestResults,
-  createDummyContest
+  createDummyContest,
+  getContestsByMatchId
 }
