@@ -4,8 +4,8 @@ const API_KEY = process.env.CRICKETDATA_API_KEY;
 
 const BASE_URL = 'https://api.cricapi.com/v1';
 
-exports.upcomingMatchesList = async () => {
-  const response = await axios.get(`${BASE_URL}/matches`, {
+exports.upcomingSeriesList = async () => {
+  const response = await axios.get(`${BASE_URL}/series`, {
     params: {
       apikey: API_KEY,
       offset: 0,
@@ -15,14 +15,14 @@ exports.upcomingMatchesList = async () => {
   return response.data.data;
 };
 
-exports.recentMatchesList = async () => {
-  const response = await axios.get(`${BASE_URL}/currentMatches`, {
+exports.getSeriesById = async (matchId) => {
+  console.log('matchId', matchId);
+  const response = await axios.get(`${BASE_URL}/series_info`, {
     params: {
       apikey: API_KEY,
-      offset: 0,
+      id: matchId
     },
   });
-  console.log('responseData', response.data);
   return response.data;
 };
 
@@ -34,6 +34,17 @@ exports.matchSquad = async (id) => {
     },
   });
   console.log('Match Squad:', response.data);
+  return response.data;
+};
+
+exports.recentMatchesList = async () => {
+  const response = await axios.get(`${BASE_URL}/currentMatches`, {
+    params: {
+      apikey: API_KEY,
+      offset: 0,
+    },
+  });
+  console.log('responseData', response.data);
   return response.data;
 };
 
@@ -61,24 +72,3 @@ exports.recentMatchUpdatedScoreCard = async (matchId) => {
   console.log('Recent Match Updated Scorecard:', response.data);
   return response.data;
 }
-exports.getMatchById = async (matchId) => {
-  console.log('matchId', matchId);
-  const response = await axios.get(`${BASE_URL}/match_info`, {
-    params: {
-      apikey: API_KEY,
-      id: matchId
-    },
-  });
-  return response.data;
-};
-
-exports.getUpcomingSeries = async () => {
-  const response = await axios.get(`${BASE_URL}/series`, {
-    params: {
-      apikey: API_KEY,
-      offset: 0,
-    },
-  });
-  console.log('Sereis Squad:', response.data);
-  return response.data;
-};
