@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 // Ensure this path correctly points to your modified calculateContestResults function
-const calculateContestResults = require('../utils/calculateContestResults'); 
+const {calculateContestResults,createDummyContest} = require('../utils/calculateContestResults'); 
 
 router.post('/calculate-results', async (req, res) => {
   const { matchId, contestId } = req.body;
@@ -52,4 +52,23 @@ router.post('/calculate-results', async (req, res) => {
   }
 });
 
+router.get('/create-contest', async (req, res) => {
+  console.log("tag here",req.query.matchId)
+   const matchId = req.query.matchId;
+  try {
+    const result = await createDummyContest(matchId);
+      res.status(200).json({ 
+        success: false, 
+        message: result.message, 
+        data: result.data
+      });
+    } catch (error) {
+    // This catch block handles unexpected errors within the route handler itself
+    console.error('API level error in /calculate-results route:', error);
+    res.status(500).json({ 
+        success: false, 
+        message: 'An unexpected error occurred on the server while processing results.' 
+    });
+  }
+});
 module.exports = router;

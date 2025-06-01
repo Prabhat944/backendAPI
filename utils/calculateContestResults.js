@@ -146,4 +146,30 @@ async function calculateContestResults(matchId, contestId) {
   }
 }
 
-module.exports = calculateContestResults;
+async function createDummyContest(matchId) {
+  try {
+    const contest = new Contest({
+      matchId: matchId,
+      entryFee: 370,
+      totalSpots: 3,
+      filledSpots: 0,
+      prize: 1000,
+      title: 'Test Contest #1',
+      participants: [],
+      prizeBreakupType: 'winnerTakesAll',  // <-- Set winner takes all here
+      // Optionally, if you want a custom split, use this:
+      // prizeBreakupType: 'top3Split',
+      // customPrizeBreakup: [70, 20, 10],
+    });
+
+    await contest.save();
+    console.log('✅ Dummy contest created:', contest._id);
+  } catch (err) {
+    console.error('❌ Error creating dummy contest:', err.message);
+  }
+}
+
+module.exports = {
+  calculateContestResults,
+  createDummyContest
+}
