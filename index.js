@@ -10,6 +10,7 @@ const teamRoutes = require('./route/teamRoute');
 const statsRoutes = require('./route/statsRoutes');
 const contestCalculateRoutes = require('./route/contestCalculateRoute');
 const profileRoute = require('./route/profileRoutes')
+const checkContestRoute = require('./route/contestCheckRoute')
 // const seriesRoutes = require('./route/seriesRoutes');
 const cors = require('cors')
 
@@ -35,6 +36,7 @@ app.use('/api/v1/team', teamRoutes);
 app.use('/api', statsRoutes);
 app.use('/api/v1/contest', contestCalculateRoutes);
 app.use('/api/v1/profile', profileRoute)
+app.use('/api/v1/check_contest', checkContestRoute)
 // app.use('/api/v1/series', seriesRoutes);
   
 app.get('/', (req, res) => {
