@@ -72,3 +72,13 @@ exports.recentMatchUpdatedScoreCard = async (matchId) => {
   console.log('Recent Match Updated Scorecard:', response.data);
   return response.data;
 }
+
+exports.getMatchById = async (matchId) => {
+  const response = await axios.get(`${BASE_URL}/match_info`, {
+params: {
+apikey: API_KEY,
+      id: matchId
+},
+});
+return response.data;
+};

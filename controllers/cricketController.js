@@ -152,25 +152,23 @@ exports.getRecentMatches = async (req, res) => {
   }
 };
 
+
 exports.getMyMatches = async (req, res) => {
   try {
     const userId = req.user?._id;
-    console.log('[getMyMatches] For User:', userId);
 
-    // Step 1: Fetch more details from ContestParticipation
-    // Select fields relevant to contest outcomes: isWinner, prizeWon, rank, totalPoints
+    // Step 1: Get all participations for the user
     const participations = await ContestParticipation.find({ user: userId })
-      .select('matchId contestId isWinner prizeWon rank totalPoints') // Added outcome fields
-      .lean(); // Use .lean() for plain JS objects, good for performance
+      .select('matchId contestId isWinner prizeWon rank totalPoints')
+      .lean();
 
-    const matchIds = participations.map(p => p.matchId?.toString().trim()).filter(id => id); // Filter out any null/undefined matchIds
-
-    if (!matchIds.length) {
+    if (participations.length === 0) {
       return res.json({ upcoming: [], live: [], completed: [] });
     }
 
-    // Step 2: Restructure how contest details are stored per match
-    // This will replace 'contestsByMatch'
+    const matchIds = [...new Set(participations.map(p => p.matchId?.toString().trim()).filter(Boolean))];
+
+    // --- THIS IS THE LOGIC I ACCIDENTALLY REMOVED. IT IS NOW RESTORED. ---
     const userContestDetailsByMatch = {};
     participations.forEach(p => {
       const mid = p.matchId.toString().trim();
@@ -178,7 +176,7 @@ exports.getMyMatches = async (req, res) => {
         userContestDetailsByMatch[mid] = [];
       }
       userContestDetailsByMatch[mid].push({
-        contestId: p.contestId.toString(), // Convert ObjectId to string
+        contestId: p.contestId.toString(),
         isWinner: p.isWinner,
         prizeWon: p.prizeWon,
         rank: p.rank,
@@ -186,125 +184,99 @@ exports.getMyMatches = async (req, res) => {
       });
     });
 
-    // User teams logic (remains mostly the same)
-    const userTeams = await Team.find({ user: userId, matchId: { $in: matchIds } }).lean(); // Added .lean()
-
+    const userTeams = await Team.find({ user: userId, matchId: { $in: matchIds } }).lean();
     const teamsCountByMatch = {};
     const userTeamsByMatch = {};
-
     userTeams.forEach(team => {
       const mid = team.matchId.toString().trim();
       teamsCountByMatch[mid] = (teamsCountByMatch[mid] || 0) + 1;
       userTeamsByMatch[mid] = userTeamsByMatch[mid] || [];
       userTeamsByMatch[mid].push({
-        _id: team._id.toString(), // Convert ObjectId to string
+        _id: team._id.toString(),
         players: team.players,
         captain: team.captain,
         viceCaptain: team.viceCaptain
       });
     });
+    // --- END OF RESTORED LOGIC ---
 
-    // Fetching external match data (remains the same)
+    // Fetching external match data
     const [recentMatchesResponse, upcomingMatchesResponse] = await Promise.all([
       cricketDataService.recentMatchesList(),
-      cricketDataService.upcomingMatchesList()
+      cricketDataService.upcomingSeriesList()
     ]);
-// console.log('check for upcoming matches', upcomingMatchesResponse)
-    const externalMatches = [...(recentMatchesResponse?.data || []), ...(upcomingMatchesResponse?.data || [])]; // Ensure upcoming also checks .data
-    // console.log('check externalMatches', externalMatches);
+
+    const externalMatches = [...(recentMatchesResponse?.data || []), ...(upcomingMatchesResponse?.data || [])];
     const externalMatchMap = {};
     externalMatches.forEach(m => {
       const mid = (m.match_id || m.id)?.toString();
       if (mid) externalMatchMap[mid] = m;
     });
 
-    const savedMatches = await UserMatch.find({ user: userId, matchId: { $in: matchIds } }).lean(); // Added .lean()
+    // --- Fallback to saved match data ---
+    const savedMatches = await UserMatch.find({ user: userId, matchId: { $in: matchIds } }).lean();
     const savedMatchMap = {};
     savedMatches.forEach(m => {
-      savedMatchMap[m.matchId.toString().trim()] = m.matchInfo; // Ensure key is string
+      savedMatchMap[m.matchId.toString().trim()] = m.matchInfo;
     });
 
     const categorizedMatches = { upcoming: [], live: [], completed: [] };
-    const seenMatches = new Set();
 
-    // Use a Set of unique match IDs from participations
-    const uniqueMatchIds = [...new Set(matchIds)]; 
-
-    uniqueMatchIds.forEach(mid => {
-      if (seenMatches.has(mid)) return; // Should not be strictly necessary with uniqueMatchIds, but good for safety
-      seenMatches.add(mid);
+    for (const mid of matchIds) {
+      console.log(`\n--- Processing Match ID: ${mid} ---`);
 
       const matchInfoFromExternal = externalMatchMap[mid];
       const matchInfoFromSaved = savedMatchMap[mid];
-      
-      let matchDetailsToUse = null;
 
-      // Prioritize fresher external data if available, otherwise use saved data
+      console.log('Match found in external service?', matchInfoFromExternal ? '✅ Yes' : '❌ NO');
+      console.log('Match found in saved UserMatch DB?', matchInfoFromSaved ? '✅ Yes' : '❌ NO');
+
+      let matchDetailsToUse = null;
       if (matchInfoFromExternal) {
-        matchDetailsToUse = matchInfoFromExternal.data || matchInfoFromExternal; // Handle if externalMatchMap stores the full response or just data
+        matchDetailsToUse = matchInfoFromExternal;
       } else if (matchInfoFromSaved) {
+        // Use the saved data if external is not available
         matchDetailsToUse = matchInfoFromSaved;
       }
-      
-      // console.log('Processing match ID:', mid);
-      // console.log('Match details to use:', matchDetailsToUse ? matchDetailsToUse.name : 'No details found');
 
       if (!matchDetailsToUse) {
-        console.warn(`No match details found for matchId: ${mid}`);
-        return; // Skip if no match details can be found
+        console.warn(`--> SKIPPING match ${mid} because NO details were found anywhere.`);
+        continue;
       }
-
-      // Ensure matchDetailsToUse has the necessary fields (id might be match_id from some sources)
-      const currentMatchId = (matchDetailsToUse.id || matchDetailsToUse.match_id)?.toString().trim();
-      if (!currentMatchId){
-        console.warn(`Match details for ${mid} does not have a usable ID field.`);
-        return;
-      }
-
-      const matchTime = matchDetailsToUse.dateTimeGMT || matchDetailsToUse.start_time || matchDetailsToUse.dateTime; // More fallbacks for time
-      const isStarted = matchDetailsToUse.matchStarted !== undefined ? matchDetailsToUse.matchStarted : (matchDetailsToUse.status && matchDetailsToUse.status !== 'Match not started');
-      const isEnded = matchDetailsToUse.matchEnded !== undefined ? matchDetailsToUse.matchEnded : (matchDetailsToUse.status && (matchDetailsToUse.status.includes('won') || matchDetailsToUse.status.includes('drawn') || matchDetailsToUse.status.includes('tied')));
       
+      // --- NEW LOG: Let's see the actual data being used for categorization ---
+      console.log('Final match details being used:', matchDetailsToUse);
+
+      // Categorization Logic
+      const matchTime = matchDetailsToUse.dateTimeGMT || matchDetailsToUse.start_time || matchDetailsToUse.dateTime;
+      const isStarted = matchDetailsToUse.matchStarted === true; // Stricter check
+      const isEnded = matchDetailsToUse.matchEnded === true;   // Stricter check
+
       const matchMeta = {
         ...matchDetailsToUse,
-        id: currentMatchId, // Ensure consistent ID
+        id: (matchDetailsToUse.id || matchDetailsToUse.match_id)?.toString().trim(),
         countdown: !isStarted && matchTime ? getCountdown(matchTime, 'future') : undefined,
-        ago: isEnded && matchTime ? getCountdown(matchTime, 'past') : undefined,
         userTeamsCount: teamsCountByMatch[mid] || 0,
-        // Step 3: Use the new structure for contest details
-        userContestDetails: userContestDetailsByMatch[mid] || [], // Changed from userContestsJoined
+        userContestDetails: userContestDetailsByMatch[mid] || [],
         userTeams: userTeamsByMatch[mid] || []
       };
-      
-      // console.log('Match Meta for categorization:', matchMeta.name, 'isStarted:', isStarted, 'isEnded:', isEnded);
 
       if (!isStarted) {
         categorizedMatches.upcoming.push(matchMeta);
       } else if (isStarted && !isEnded) {
         categorizedMatches.live.push(matchMeta);
-      } else if (isEnded) { // Only push to completed if explicitly ended
+      } else if (isEnded) {
         categorizedMatches.completed.push(matchMeta);
-      } else {
-        // Optional: could categorize as 'live' or 'other' if status is ambiguous
-        console.warn(`Match ${mid} has unclear status: isStarted=${isStarted}, isEnded=${isEnded}. Categorizing as live by default if started.`);
-        if(isStarted) categorizedMatches.live.push(matchMeta);
       }
-    });
-
-    // Sort matches within each category if needed (e.g., by date)
-    // Example: categorizedMatches.upcoming.sort((a, b) => new Date(a.dateTimeGMT) - new Date(b.dateTimeGMT));
-    // Example: categorizedMatches.completed.sort((a, b) => new Date(b.dateTimeGMT) - new Date(a.dateTimeGMT));
-
+    }
 
     return res.json(categorizedMatches);
+
   } catch (error) {
     console.error('[getMyMatches] Error:', error);
     return res.status(500).json({ message: 'Failed to fetch user matches', error: error.message });
   }
 };
-
-
-
 /**
  * @desc Get detailed match information
  */
@@ -317,5 +289,46 @@ exports.getMatchDetails = async (req, res) => {
   } catch (error) {
     console.error('[getMatchDetails]', error);
     return res.status(500).json({ message: 'Failed to fetch match details', error: error.message });
+  }
+};
+
+
+exports.getUserContestsForMatch = async (req, res) => {
+  try {
+    const userId = req.user?._id;
+    const { matchId } = req.params;
+
+    if (!matchId || !userId) {
+      return res.status(400).json({ message: 'Match ID and User ID are required.' });
+    }
+
+    const userParticipations = await ContestParticipation.find({
+      user: userId,
+      matchId: matchId
+    })
+    .select('contestId isWinner prizeWon rank totalPoints teamId')
+    // --- THIS LINE IS CORRECTED ---
+    .populate('contestId', 'title entryFee totalSpots prize filledSpots prizeBreakupType') // CHANGED: 'prizePool' to 'prize' and added title/prizeBreakupType
+    .lean();
+
+    // The 'userParticipations' array will now look like this:
+    // {
+    //   ...participationFields,
+    //   contestId: {
+    //     _id: ...,
+    //     title: "Daily H2H Clash #1",
+    //     prize: 1000, // <--- The prize will now be included
+    //     filledSpots: ...
+    //   }
+    // }
+    
+    res.json({
+      count: userParticipations.length,
+      participations: userParticipations,
+    });
+
+  } catch (error) {
+    console.error('[getUserContestsForMatch] Error:', error);
+    res.status(500).json({ message: 'Failed to fetch user contest data for the match', error: error.message });
   }
 };

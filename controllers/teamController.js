@@ -7,44 +7,53 @@ const { getPlayerSelectionStats } = require('./statsController');
 exports.createTeam = async (req, res) => {
     const userId = req.user._id;
     const { matchId, playerIds, captainId, viceCaptainId } = req.body;
-  
+    console.log("tag here",{ matchId, playerIds, captainId, viceCaptainId })
     // 1. Basic validations
     if (!matchId || !Array.isArray(playerIds) || playerIds.length !== 11 || !captainId || !viceCaptainId) {
       return res.status(400).json({
         message: 'matchId, exactly 11 playerIds, captainId, and viceCaptainId are required.'
       });
     }
-  
+    console.log("tag here duplicate",{ matchId, playerIds, captainId, viceCaptainId })
+
     // 2. Check for duplicate players
     const uniquePlayers = new Set(playerIds);
     if (uniquePlayers.size !== 11) {
       return res.status(400).json({ message: 'Duplicate players are not allowed in the team.' });
     }
-  
+    console.log("tag here uniquePlayers",{ matchId, playerIds, captainId, viceCaptainId })
+
     // 3. Captain and VC must be part of players
     if (!playerIds.includes(captainId) || !playerIds.includes(viceCaptainId)) {
       return res.status(400).json({ message: 'Captain and Vice-Captain must be in the selected players.' });
     }
-  
+    console.log("tag here playerIds.includes",{ matchId, playerIds, captainId, viceCaptainId })
+
     try {
       // 4. Limit teams per match
       const teamCount = await Team.countDocuments({ user: userId, matchId });
+      console.log("tag here teamCount",{ matchId, playerIds, captainId, viceCaptainId })
+
       if (teamCount >= 10) {
         return res.status(400).json({ message: 'Maximum 10 teams allowed per match.' });
       }
   
       // 5. Validate player IDs against match squad
       const matchSquadResponse = await cricketDataService.matchSquad(matchId);
+      console.log("tag here matchSquadResponse",matchSquadResponse)
+
       const teams = matchSquadResponse.data;
       const allPlayers = teams.flatMap(team => team.players);
       const squadMap = new Map(allPlayers.map(p => [p.id, p]));
       const validPlayerIds = Array.from(squadMap.keys());
-  
+      console.log("tag here teams",{validPlayerIds,squadMap})
+
       const isValid = playerIds.every(id => validPlayerIds.includes(id));
       if (!isValid) {
         return res.status(400).json({ message: 'Some player IDs are invalid or not in the squad.' });
       }
-  
+      console.log("tag here isValid",{isValid})
+
       // 6. Role validation
       const roleCount = { wk: 0, bat: 0, ar: 0, bowl: 0 };
       for (let id of playerIds) {
@@ -57,18 +66,22 @@ exports.createTeam = async (req, res) => {
         else if (role.includes('all')) roleCount.ar++;
         else if (role.includes('bowl')) roleCount.bowl++;
       }
-  
+      console.log("tag here roleCount",{roleCount})
+
       if (
-        roleCount.wk < 1 || roleCount.bat < 1 || roleCount.ar < 1 || roleCount.bowl < 1 ||
+         roleCount.bat < 1 || roleCount.ar < 1 || roleCount.bowl < 1 ||
         roleCount.wk > 8 || roleCount.bat > 8 || roleCount.ar > 8 || roleCount.bowl > 8
       ) {
         return res.status(400).json({
           message: 'Team must have at least 1 and at most 8 players from each role (WK, BAT, AR, BOWL).'
         });
       }
-  
+      console.log("tag here before existingTeams",{roleCount})
+
       // 7. Check for duplicate team
       const existingTeams = await Team.find({ user: userId, matchId });
+      console.log("tag here after existingTeams",{existingTeams})
+
       const duplicate = existingTeams.find(team => {
         const samePlayers =
           team.players.length === playerIds.length &&
@@ -76,11 +89,13 @@ exports.createTeam = async (req, res) => {
         const sameCapVc = team.captain === captainId && team.viceCaptain === viceCaptainId;
         return samePlayers && sameCapVc;
       });
-  
+      console.log("tag here after duplicate",{duplicate})
+
       if (duplicate) {
         return res.status(400).json({ message: 'Duplicate team with same players, captain and vice-captain already exists.' });
       }
-  
+      console.log("tag here before save duplicate",{duplicate})
+
       // 8. Save team
       const newTeam = new Team({
         user: userId,
@@ -89,8 +104,13 @@ exports.createTeam = async (req, res) => {
         captain: captainId,
         viceCaptain: viceCaptainId
       });
+      console.log("tag here after newTeam",{newTeam})
+
       await newTeam.save();
+      console.log("tag here after newTeam save",{newTeam})
+
       await getPlayerSelectionStats(newTeam.matchId);
+      console.log("tag here after newTeam save getPlayerSelectionStats",{newTeam})
 
       res.status(201).json({ message: 'Team created successfully', team: newTeam });
     } catch (err) {
