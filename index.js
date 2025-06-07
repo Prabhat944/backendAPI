@@ -1,5 +1,5 @@
 require('dotenv').config();
-require('./cron/contestScheduler');
+// require('./cron/contestScheduler');
 require('./cron/matchStatsCron');
 const express = require('express');
 const connectDB = require('./config/db');
