@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const teamController = require('../controllers/teamController');
-const matchController = require('../controllers/matchController');
+const matchController = require('../controllers/matchSquadController');
 const authMiddleware = require('../middleware/authMiddleware');
 
 router.post('/team/create', authMiddleware, teamController.createTeam);

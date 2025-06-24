@@ -1,6 +1,13 @@
 require('dotenv').config();
-// require('./cron/contestScheduler');
+require('./cron/contestScheduler');
 require('./cron/matchStatsCron');
+require('./cron/updateUpcomingSereis');
+require('./cron/updateUpcomingMatches');
+require('./cron/updateSquadsCron');
+require('./cron/updateRecentMatchesCron');
+require('./cron/updateTeamPoints');
+require('./cron/updateContestStatusCron');
+require('./cron/updateCancelContestAndRefund');
 const express = require('express');
 const connectDB = require('./config/db');
 const authRoutes = require('./route/authRoute');
@@ -11,9 +18,10 @@ const statsRoutes = require('./route/statsRoutes');
 const contestCalculateRoutes = require('./route/contestCalculateRoute');
 const profileRoute = require('./route/profileRoutes')
 const checkContestRoute = require('./route/contestCheckRoute')
+const pointRoutes = require('./route/pointRoute')
 // const seriesRoutes = require('./route/seriesRoutes');
 const cors = require('cors')
-
+require('./config/cloudinary');
 
 const app = express();
 
@@ -37,6 +45,7 @@ app.use('/api', statsRoutes);
 app.use('/api/v1/contest', contestCalculateRoutes);
 app.use('/api/v1/profile', profileRoute)
 app.use('/api/v1/check_contest', checkContestRoute)
+app.use('/api/v1/point', pointRoutes)
 // app.use('/api/v1/series', seriesRoutes);
   
 app.get('/', (req, res) => {

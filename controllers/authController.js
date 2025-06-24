@@ -8,6 +8,9 @@ const generateReferCode = require('../utils/referCode');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 const { sendOTPViaSMS } = require('../utils/sendSms'); // adjust path if needed
 const axios = require('axios');
+const mongoose = require('mongoose');
+const cloudinary = require('cloudinary').v2;
+const fs = require('fs');
 
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -15,6 +18,9 @@ const JWT_SECRET = process.env.JWT_SECRET;
 exports.signup = async (req, res) => {
   const { name, email, mobile, password, referCode } = req.body;
   try {
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: "Name, email, and password are required." });
+  }
     const existingUser = await User.findOne({ $or: [{ email }, { mobile }] });
     console.log('Existing User:', existingUser);
     if (existingUser) return res.status(400).json({ message: 'User already exists' });
@@ -103,27 +109,47 @@ exports.resetPassword = async (req, res) => {
 exports.sendOtp = async (req, res) => {
   const { mobile, referCode } = req.body;
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
+console.log('cehck the otp here', otp);
   try {
-    // Save OTP to DB
     await OTP.findOneAndUpdate(
       { mobile },
       { otp, createdAt: new Date() },
       { upsert: true, new: true }
     );
 
-    // Send OTP via SMS
     await sendOTPViaSMS(mobile, otp);
 
-    // Create user if not exists
     let user = await User.findOne({ mobile });
+    console.log('check the user here fot otp', user)
     if (!user) {
-      user = new User({
-        mobile,
-        referCode: generateReferCode(),
-        signupMode: 'otp'
-      });
+      
+      // --- FINAL, ROBUST NAME GENERATION ---
 
+      // Step 1: Generate the creative base name
+      const adjectives = ['Swift', 'Mighty', 'Clever', 'Brave', 'Dashing', 'Royal', 'Super', 'Grand', 'Fearless', 'Agile', 'Prime'];
+      const nouns = ['Striker', 'Captain', 'Challenger', 'Knight', 'Eagle', 'Titan', 'Panther', 'King', 'Master', 'Star', 'Lion'];
+      const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+      const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+      const baseName = `${randomAdjective}${randomNoun}`;
+
+      // Step 2: Manually create a new, unique ObjectId for our new user.
+      const newUserId = new mongoose.Types.ObjectId();
+      
+      // Step 3: Create the guaranteed unique name using this new ID.
+      const finalName = `${baseName}_${newUserId.toString().slice(-5)}`;
+console.log('check final name here', finalName);
+      // Step 4: Create the new user instance with ALL data provided at once.
+      user = new User({
+        _id: newUserId, // Explicitly set the new ID
+        name: finalName,  // Explicitly set the new name
+        mobile,
+        signupMode: 'otp',
+        referCode: generateReferCode(),
+      });
+      console.log('check the user here', user);
+      // --- END OF NEW LOGIC ---
+
+      // Step 5: Handle referrals and save the user
       if (referCode) {
         const referrer = await User.findOne({ referCode });
         if (referrer) {
@@ -144,7 +170,6 @@ exports.sendOtp = async (req, res) => {
     res.status(500).json({ message: err.message || 'Failed to send OTP' });
   }
 };
-
 
   // Verify OTP 
 exports.verifyOtp = async (req, res) => {
@@ -254,3 +279,51 @@ exports.updateUser = async (req, res) => {
     }
   };
   
+  exports.uploadProfileImage = async (req, res) => {
+    try {
+      const userId = req.user._id;
+  
+      // 1. Check if a file was actually uploaded.
+      // The file is available at req.file thanks to the 'multer' middleware we'll set up.
+      if (!req.file) {
+        return res.status(400).json({ message: 'No image file provided.' });
+      }
+  
+      // 2. Upload the file to Cloudinary.
+      // The 'path' property points to the temporary location where multer saved the file.
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: 'fantasy_app_profiles', // Optional: Organizes uploads into a specific folder
+        resource_type: 'image',
+        transformation: [ // Optional: Auto-transforms the image for optimization
+          { width: 250, height: 250, gravity: "face", crop: "fill" }
+        ]
+      });
+  
+      // 3. Once the upload is complete, we don't need the temporary file anymore.
+      fs.unlinkSync(req.file.path);
+  
+      // 4. Update the user's document with the secure URL from Cloudinary.
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $set: { profileImage: result.secure_url } },
+        { new: true } // 'new: true' returns the updated document
+      ).select('profileImage');
+  
+      if (!updatedUser) {
+        return res.status(404).json({ message: 'User not found.' });
+      }
+  
+      res.status(200).json({
+        message: 'Profile image uploaded successfully.',
+        profileImage: updatedUser.profileImage
+      });
+  
+    } catch (error) {
+      console.error('Error uploading profile image:', error);
+      // If a temp file was created but an error occurred, try to delete it.
+      if (req.file) {
+        fs.unlinkSync(req.file.path);
+      }
+      res.status(500).json({ message: 'Image upload failed.', error: error.message });
+    }
+  };

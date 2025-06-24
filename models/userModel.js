@@ -1,11 +1,9 @@
+// models/userModel.js
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
   name: {
-    type: String,
-    required: function () {
-      return this.signupMode === 'email';
-    },
+    type: String
   },
   email: {
     type: String,
@@ -20,6 +18,12 @@ const userSchema = new mongoose.Schema({
     required: function () {
       return this.signupMode === 'email';
     },
+  },
+  // ✅ --- NEW FIELD ADDED ---
+  // This will store the URL of the user's uploaded profile picture.
+  profileImage: {
+    type: String,
+    default: '' // Defaults to an empty string if no image is uploaded
   },
   mobile: {
     type: String,
@@ -39,7 +43,7 @@ const userSchema = new mongoose.Schema({
   },
   referralCounted: {
     type: Boolean,
-    default: false,  // ✅ ensures we only count once per user
+    default: false,
   },
   signupMode: {
     type: String,

@@ -1,3 +1,5 @@
+// script/createDummyContest.js
+
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const Contest = require('../models/Contest');
@@ -8,9 +10,12 @@ async function createDummyContest() {
   try {
     await mongoose.connect(process.env.MONGO_URI);
 
-    const match = "f48d1b78-4912-4967-9c1a-20e177a8d08d";
+    const match = "8ec39b39-0b6c-4604-946c-5615dd5e8e6e";
 
     const contest = new Contest({
+      // ✨ ADD THIS REQUIRED FIELD
+      contestTemplateId: '683d57e401e83bd919a0063d', // <-- Provide a valid template ID
+
       matchId: match,
       entryFee: 370,
       totalSpots: 3,
@@ -18,10 +23,7 @@ async function createDummyContest() {
       prize: 1000,
       title: 'T20',
       participants: [],
-      prizeBreakupType: 'winnerTakesAll',  // <-- Set winner takes all here
-      // Optionally, if you want a custom split, use this:
-      // prizeBreakupType: 'top3Split',
-      // customPrizeBreakup: [70, 20, 10],
+      prizeBreakupType: 'winnerTakesAll',
     });
 
     await contest.save();

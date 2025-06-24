@@ -4,22 +4,27 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon --exec \"node --icu-data-dir=./node_modules/full-icu\" server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "axios": "^1.9.0",
+    "axios": "^1.10.0",
     "bcryptjs": "^3.0.2",
+    "cloudinary": "^2.7.0",
     "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "full-icu": "^1.5.0",
     "google-auth-library": "^9.15.1",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.14.3",
-    "node-cron": "^4.0.5",
+    "mongoose": "^8.16.0",
+    "multer": "^2.0.1",
+    "node-cron": "^4.1.0",
     "nodemailer": "^7.0.3",
     "redis": "^5.1.0",
     "twilio": "^5.6.1"

@@ -1,16 +1,16 @@
+// In your user profile controller
+
 const User = require('../models/userModel'); // Adjust path as needed
 const UserContestOutcome = require('../models/UserContestOutcome'); // Adjust path as needed
-// const ContestParticipation = require('../models/contestParticipationModel'); // If still needed for just "played" count before outcomes are processed
 
 // Helper function to calculate stats for a given userId
 const calculateUserStats = async (userId) => {
   const totalContestsParticipated = await UserContestOutcome.countDocuments({
     user: userId,
-    resultStatus: { $in: ['WIN', 'LOSS', 'DRAW'] } // Only count completed & processed contests
+    resultStatus: { $in: ['WIN', 'LOSS', 'DRAW'] }
   });
   const totalWins = await UserContestOutcome.countDocuments({ user: userId, resultStatus: 'WIN' });
   const totalLosses = await UserContestOutcome.countDocuments({ user: userId, resultStatus: 'LOSS' });
-  // const totalDraws = await UserContestOutcome.countDocuments({ user: userId, resultStatus: 'DRAW' }); // Optional
 
   let winningPercentage = 0;
   if (totalContestsParticipated > 0) {
@@ -21,25 +21,27 @@ const calculateUserStats = async (userId) => {
     totalContestsParticipated,
     totalWins,
     totalLosses,
-    // totalDraws, // Optional
     winningPercentage,
   };
 };
 
+
 exports.getDetailedUserProfile = async (req, res) => {
   try {
-    const userId = req.user._id; // Assuming req.user is populated by auth middleware
+    const userId = req.user._id;
 
-    const currentUser = await User.findById(userId).select('-password'); // Exclude password
+    const currentUser = await User.findById(userId).select('-password');
     if (!currentUser) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Get stats for the current user
     const currentUserStats = await calculateUserStats(userId);
 
-    // Find users referred by the current user
-    const referredUsers = await User.find({ referredBy: currentUser.referCode }).select('-password');
+    // ✅ --- THIS IS THE FIX ---
+    // We now use an inclusive projection, listing all the fields we want.
+    // By not including 'password', it is automatically excluded.
+    const referredUsers = await User.find({ referredBy: currentUser.referCode })
+      .select('_id name email mobile signupMode profileImage');
 
     const referredUsersWithStats = [];
     for (const referredUser of referredUsers) {
@@ -47,9 +49,10 @@ exports.getDetailedUserProfile = async (req, res) => {
       referredUsersWithStats.push({
         _id: referredUser._id,
         name: referredUser.name,
-        email: referredUser.email, // Or other identifying info
+        email: referredUser.email,
         mobile: referredUser.mobile,
         signupMode: referredUser.signupMode,
+        profileImage: referredUser.profileImage,
         stats: stats,
       });
     }
@@ -60,9 +63,9 @@ exports.getDetailedUserProfile = async (req, res) => {
         name: currentUser.name,
         email: currentUser.email,
         mobile: currentUser.mobile,
+        profileImage: currentUser.profileImage,
         referCode: currentUser.referCode,
-        referralCount: currentUser.referralCount, // This is the count from your userModel
-        // Add any other fields from userModel you want to return
+        referralCount: currentUser.referralCount,
       },
       stats: currentUserStats,
       referredUsers: referredUsersWithStats,
