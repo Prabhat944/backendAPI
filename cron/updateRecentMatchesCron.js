@@ -34,7 +34,12 @@
 //             }
 //         }));
 //         const result = await RecentMatch.bulkWrite(bulkOps);
-//         console.log('RecentMatches collection updated:', { inserted: result.nUpserted, updated: result.nModified });
+//         // console.log('RecentMatches collection updated:', { inserted: result.nUpserted, updated: result.nModified });
+//         console.log('RecentMatches collection updated:', {
+//             inserted: result.upsertedCount,
+//             updated: result.modifiedCount
+//         });
+        
 
 
 //         // Step 3: Enforce the data retention policy

@@ -29,71 +29,83 @@ const getPlayerSelectionStats = async (matchId) => {
             in: {
               playerId: "$$player._id",
               selectionPercent: {
-                $multiply: [
-                  { $divide: ["$$player.count", totalTeams] },
-                  100
+                $floor: [ // <--- CHANGED TO $floor HERE
+                  {
+                    $multiply: [
+                      { $divide: ["$$player.count", totalTeams] },
+                      100
+                    ]
+                  }
                 ]
               },
               captainPercent: {
-                $multiply: [
+                $floor: [ // <--- CHANGED TO $floor HERE
                   {
-                    $divide: [
+                    $multiply: [
                       {
-                        $ifNull: [
+                        $divide: [
                           {
-                            $let: {
-                              vars: {
-                                match: {
-                                  $first: {
-                                    $filter: {
-                                      input: "$captains",
-                                      as: "c",
-                                      cond: { $eq: ["$$c._id", "$$player._id"] }
+                            $ifNull: [
+                              {
+                                $let: {
+                                  vars: {
+                                    match: {
+                                      $first: {
+                                        $filter: {
+                                          input: "$captains",
+                                          as: "c",
+                                          cond: { $eq: ["$$c._id", "$$player._id"] }
+                                        }
+                                      }
                                     }
-                                  }
+                                  },
+                                  in: "$$match.count"
                                 }
                               },
-                              in: "$$match.count"
-                            }
+                              0
+                            ]
                           },
-                          0
+                          totalTeams
                         ]
                       },
-                      totalTeams
+                      100
                     ]
-                  },
-                  100
+                  }
                 ]
               },
               viceCaptainPercent: {
-                $multiply: [
+                $floor: [ // <--- CHANGED TO $floor HERE
                   {
-                    $divide: [
+                    $multiply: [
                       {
-                        $ifNull: [
+                        $divide: [
                           {
-                            $let: {
-                              vars: {
-                                match: {
-                                  $first: {
-                                    $filter: {
-                                      input: "$viceCaptains",
-                                      as: "vc",
-                                      cond: { $eq: ["$$vc._id", "$$player._id"] }
+                            $ifNull: [
+                              {
+                                $let: {
+                                  vars: {
+                                    match: {
+                                      $first: {
+                                        $filter: {
+                                          input: "$viceCaptains",
+                                          as: "vc",
+                                          cond: { $eq: ["$$vc._id", "$$player._id"] }
+                                        }
+                                      }
                                     }
-                                  }
+                                  },
+                                  in: "$$match.count"
                                 }
                               },
-                              in: "$$match.count"
-                            }
+                              0
+                            ]
                           },
-                          0
+                          totalTeams
                         ]
                       },
-                      totalTeams
+                      100
                     ]
-                  },
-                  100
+                  }
                 ]
               }
             }

@@ -18,6 +18,11 @@ const contestSchema = new mongoose.Schema({
     default: null, // Null if this is the first instance
     index: true,
   },
+  type: {
+    type: String,
+    enum: ['GRAND', 'MINI_GL', 'SMALL', 'H2H', 'WINNER_TAKE_ALL'],
+    required: true,
+  },
   entryFee: { type: Number, required: true, min: 0 },
   totalSpots: { type: Number, required: true, min: 2 },
   filledSpots: { type: Number, default: 0, min: 0 },
@@ -40,6 +45,12 @@ const contestSchema = new mongoose.Schema({
     enum: ['upcoming', 'live', 'processing', 'completed', 'cancelled'], 
     default: 'upcoming',
     index: true,
+  },
+  signupBonusAllowedPercentage: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
   },
   // winnerAnnounced: { type: Boolean, default: false },
   // winners: [{ userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User'}, rank: Number, prizeAmount: Number }],

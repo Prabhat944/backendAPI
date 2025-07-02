@@ -6,7 +6,6 @@ const getCountdown = require('../utils/countDown');
 const UserMatch = require('../models/UserMatchStore');
 const redisClient = require('../utils/redisClient'); // Assuming your client is exported from here
 const SERIES_MATCHES_CACHE_TTL = 3600; // Cache TTL for matches within a series: 1 hour (in seconds)
-const { calculateTeamPoints } = require('../utils/pointUpdate'); // <-- Import the new helper
 const PlayerPerformance = require('../models/PlayerPerformanceSchema');
 const upcomingMatchesList = require('../models/UpcomingMatches')
 const recentMatchList = require('../models/RecentMatch'); // Import the new model
@@ -126,21 +125,32 @@ const enrichTeam = (team, matchPerformances, matchPlayerDetails) => {
   return { ...team, players: enrichedPlayers, totalPoints: parseFloat(totalPoints.toFixed(2)), teamName: team.teamName || '' };
 };
 
+
 exports.getMyMatches = async (req, res) => {
   try {
     const userId = req.user?._id;
+    if (!userId) {
+        return res.status(401).json({ message: 'User not authenticated.' });
+    }
 
-    // --- (Data fetching and map creation logic is unchanged) ---
     const participations = await ContestParticipation.find({ user: userId }).lean();
     if (!participations || participations.length === 0) {
-      return res.json({ upcoming: [], live: [], completed: [] });
+      return res.json({ upcoming: [], live: [], completed: [], cancelled: [] });
     }
+
     const matchIds = [...new Set(participations.map(p => p.matchId?.toString().trim()).filter(Boolean))];
     const userContestIds = [...new Set(participations.map(p => p.contestId?.toString()).filter(Boolean))];
+
     const allContests = await Contest.find({ _id: { $in: userContestIds } }).lean();
     const templateIds = [...new Set(allContests.map(c => c.contestTemplateId?.toString()).filter(Boolean))];
+
     const [
-      allParticipationsInContests, allPlayerPerformances, upcomingMatchDetails, recentMatchDetails, allSquads, allContestTemplates
+      allParticipationsInContests,
+      allPlayerPerformances,
+      upcomingMatchDetails,
+      recentMatchDetails,
+      allSquads,
+      allContestTemplates
     ] = await Promise.all([
       ContestParticipation.find({ contestId: { $in: userContestIds } }).populate('user', 'name').lean(),
       PlayerPerformance.find({ matchId: { $in: matchIds } }).lean(),
@@ -149,19 +159,24 @@ exports.getMyMatches = async (req, res) => {
       squadList.find({ _id: { $in: matchIds } }).lean(),
       ContestTemplate.find({ _id: { $in: templateIds } }).lean()
     ]);
+
     const allTeamIds = [...new Set(allParticipationsInContests.map(p => p.teamId?.toString()).filter(Boolean))];
     const allTeams = await Team.find({ _id: { $in: allTeamIds } }).lean();
+
     const teamsById = new Map(allTeams.map(t => [t._id.toString(), t]));
     const contestDetailsMap = new Map(allContests.map(c => [c._id.toString(), c]));
     const contestTemplatesMap = new Map(allContestTemplates.map(ct => [ct._id.toString(), ct]));
+    
     const performancesByMatch = allPlayerPerformances.reduce((acc, p) => {
         const mid = p.matchId?.toString();
         if(mid) { if (!acc[mid]) acc[mid] = {}; acc[mid][p.playerId.toString()] = p; }
         return acc;
     }, {});
+    
     const matchDetailsMap = new Map();
     upcomingMatchDetails.forEach(m => matchDetailsMap.set(m._id.toString(), m));
     recentMatchDetails.forEach(m => matchDetailsMap.set(m._id.toString(), m));
+    
     const playerDetailsMap = allSquads.reduce((acc, squadDoc) => {
         const matchId = squadDoc._id.toString();
         const innerPlayerMap = new Map(squadDoc.squad.flatMap(team => team.players).map(player => [player.id, player]));
@@ -169,7 +184,7 @@ exports.getMyMatches = async (req, res) => {
         return acc;
     }, new Map());
 
-    const categorizedMatches = { upcoming: [], live: [], completed: [] };
+    const categorizedMatches = { upcoming: [], live: [], completed: [], cancelled: [] };
 
     for (const mid of matchIds) {
       const matchDetails = matchDetailsMap.get(mid);
@@ -185,76 +200,107 @@ exports.getMyMatches = async (req, res) => {
 
       const participantsForThisMatch = allParticipationsInContests.filter(p => p.matchId?.toString() === mid);
 
+      // --- CRITICAL CHANGE START: allEnrichedTeams no longer carries rank/prizeWon ---
+      // This array will be the source for general 'userTeams' and 'opponentTeams'
+      // It includes base points, players, and match-level total points.
       let allEnrichedTeams = [];
       participantsForThisMatch.forEach(p => {
         const team = teamsById.get(p.teamId?.toString());
         if (team) {
+          // Note: isWinner, prizeWon, rank are NOT added here.
           allEnrichedTeams.push({ ...enrichTeam(team, performancesByMatch[mid] || {}, playerDetailsMap.get(mid) || new Map()), user: p.user, contestId: p.contestId });
         }
       });
 
-      // ✅ --- START OF CORRECTED LOGIC ---
-      // 1. Calculate ranks first for all teams
-      const finalRanksByContest = new Map();
+      // Populate userTeams and opponentTeams for the match overview (unique teams)
+      // These will NOT have contest-specific rank/isWinner/prizeWon attached
+      const userTeamsMapForOverview = new Map();
+      allEnrichedTeams.filter(t => t.user?._id?.toString() === userId.toString()).forEach(team => {
+          if (!userTeamsMapForOverview.has(team._id.toString())) {
+              userTeamsMapForOverview.set(team._id.toString(), team);
+          }
+      });
+      const userTeams = Array.from(userTeamsMapForOverview.values());
+      
+      const opponentTeamsMapForOverview = new Map();
+      allEnrichedTeams.filter(t => t.user?._id?.toString() !== userId.toString()).forEach(team => {
+          if (!opponentTeamsMapForOverview.has(team._id.toString())) {
+              opponentTeamsMapForOverview.set(team._id.toString(), team);
+          }
+      });
+      const opponentTeams = Array.from(opponentTeamsMapForOverview.values());
+      // --- CRITICAL CHANGE END ---
+
+
+      // --- Calculate Ranks (this part remains largely the same, but for all teams) ---
+      const finalRanksByContest = new Map(); // Maps contestId -> (Map: teamId -> rank)
       if (matchDetails.matchStarted) {
         const contestIdsInMatch = [...new Set(participantsForThisMatch.map(p => p.contestId.toString()))];
         for (const contestId of contestIdsInMatch) {
+          // Use allEnrichedTeams for sorting as it has totalPoints
           const contestParticipants = allEnrichedTeams.filter(team => team.contestId.toString() === contestId);
           contestParticipants.sort((a, b) => b.totalPoints - a.totalPoints);
-          const userRankMap = new Map();
-          let rank = 1;
+          
+          const teamRankMap = new Map(); // Map to store teamId to rank for this specific contest
+          let currentRank = 1;
           for (let i = 0; i < contestParticipants.length; i++) {
             if (i > 0 && contestParticipants[i].totalPoints < contestParticipants[i - 1].totalPoints) {
-              rank = i + 1;
+              currentRank = i + 1;
             }
-            userRankMap.set(contestParticipants[i]._id.toString(), rank);
+            teamRankMap.set(contestParticipants[i]._id.toString(), currentRank);
           }
-          finalRanksByContest.set(contestId, userRankMap);
+          finalRanksByContest.set(contestId, teamRankMap);
         }
       }
       
-      // 2. Now, create a final list of teams that includes their rank and prize won
+      // --- Create allFullyEnrichedTeams (now with contest-specific rank/isWinner/prizeWon) ---
+      // This array will be the source for contest-specific leaderboards.
       const allFullyEnrichedTeams = allEnrichedTeams.map(team => {
-        const rank = finalRanksByContest.get(team.contestId.toString())?.get(team._id.toString()) || team.rank || null;
         const contest = contestDetailsMap.get(team.contestId.toString());
         const contestTemplate = contest ? contestTemplatesMap.get(contest.contestTemplateId.toString()) : null;
         const prizeBreakdown = generatePrizeBreakdown(contestTemplate);
 
+        let teamRank = finalRanksByContest.get(team.contestId.toString())?.get(team._id.toString()) || team.rank || null;
         let isWinner = false;
         let prizeWon = 0;
 
-        if (matchDetails.matchEnded && rank) {
-            const tiedPlayers = allEnrichedTeams.filter(t => t.contestId.toString() === team.contestId.toString() && finalRanksByContest.get(t.contestId.toString())?.get(t._id.toString()) === rank);
+        if (matchDetails.matchEnded && teamRank !== null) {
+            // Find other teams in the SAME contest with the SAME rank for tie-breaking prize logic
+            const tiedPlayers = allEnrichedTeams.filter( // Use allEnrichedTeams here to get all participants for tie check
+                t => t.contestId.toString() === team.contestId.toString() &&
+                     (finalRanksByContest.get(t.contestId.toString())?.get(t._id.toString()) === teamRank)
+            );
             const tieCount = tiedPlayers.length;
 
-            if (tieCount > 1) { // Tie detected
-                const occupiedRanks = Array.from({ length: tieCount }, (_, i) => rank + i);
+            if (tieCount > 1) {
+                const occupiedRanks = Array.from({ length: tieCount }, (_, i) => teamRank + i);
                 const totalTiedPrize = prizeBreakdown.filter(b => occupiedRanks.includes(b.rank)).reduce((sum, b) => sum + b.prize, 0);
                 prizeWon = parseFloat((totalTiedPrize / tieCount).toFixed(2));
-            } else { // No tie
-                const winningRank = prizeBreakdown.find(b => b.rank === rank);
+            } else {
+                const winningRank = prizeBreakdown.find(b => b.rank === teamRank);
                 if (winningRank) prizeWon = winningRank.prize;
             }
             isWinner = prizeWon > 0;
         }
 
-        return { ...team, rank, isWinner, prizeWon };
+        return { ...team, rank: teamRank, isWinner, prizeWon }; // Add calculated rank and prize
       });
-      // ✅ --- END OF CORRECTED LOGIC ---
 
-      // 3. Build the response from the final, fully-enriched data
-      const userTeamsMap = new Map();
-      allFullyEnrichedTeams.filter(t => t.user?._id?.toString() === userId.toString()).forEach(team => {
-          if (!userTeamsMap.has(team._id.toString())) userTeamsMap.set(team._id.toString(), team);
-      });
-      const userTeams = Array.from(userTeamsMap.values());
-      
-      const opponentTeamsMap = new Map();
-      allFullyEnrichedTeams.filter(t => t.user?._id?.toString() !== userId.toString()).forEach(team => {
-          if (!opponentTeamsMap.has(team._id.toString())) opponentTeamsMap.set(team._id.toString(), team);
-      });
-      const opponentTeams = Array.from(opponentTeamsMap.values());
 
+      // --- NEW: Populate contestLeaderboards for drill-down view ---
+      const contestLeaderboards = new Map(); // Map: contestId -> Array of ALL teams (user's and opponents') for that contest
+      const contestIdsInMatch = [...new Set(participantsForThisMatch.map(p => p.contestId.toString()))];
+      for (const contestId of contestIdsInMatch) {
+          const teamsForThisContest = allFullyEnrichedTeams
+              .filter(team => team.contestId.toString() === contestId)
+              .sort((a, b) => a.rank - b.rank); // Sort by rank for display
+          contestLeaderboards.set(contestId, teamsForThisContest);
+      }
+      // --- END NEW ---
+
+
+      // `userContestDetails` remains the primary source for the user's specific contest entries
+      // It is already correctly picking up the `isWinner`, `prizeWon`, and `rank` from `allFullyEnrichedTeams`
       const userContestDetails = participantsForThisMatch
         .filter(p => p.user?._id?.toString() === userId.toString())
         .map(p => {
@@ -269,15 +315,21 @@ exports.getMyMatches = async (req, res) => {
             };
           }
 
-          const enrichedTeamData = new Map(allFullyEnrichedTeams.map(t => [t._id.toString(), t])).get(p.teamId.toString());
+          const enrichedTeamDataForThisContest = allFullyEnrichedTeams.find(
+            t => t._id.toString() === p.teamId.toString() && t.contestId.toString() === p.contestId.toString()
+          );
+
           const contestTemplate = contest ? contestTemplatesMap.get(contest.contestTemplateId.toString()) : null;
 
           return {
-            ...p,
-            totalPoints: enrichedTeamData?.totalPoints || p.totalPoints,
-            rank: enrichedTeamData?.rank || p.rank,
-            isWinner: enrichedTeamData?.isWinner || false,
-            prizeWon: enrichedTeamData?.prizeWon || 0,
+            ...p, // Original participation data
+            // Override with calculated/enriched data relevant to this specific contest participation
+            totalPoints: enrichedTeamDataForThisContest?.totalPoints || p.totalPoints,
+            rank: enrichedTeamDataForThisContest?.rank || p.rank,
+            isWinner: enrichedTeamDataForThisContest?.isWinner || false,
+            prizeWon: enrichedTeamDataForThisContest?.prizeWon || 0,
+            
+            // Contest-specific details
             contestPrize: contestTemplate?.prize || 0,
             contestType: contestTemplate?.type || '',
             entryFee: contestTemplate?.entryFee || 0,
@@ -291,26 +343,34 @@ exports.getMyMatches = async (req, res) => {
 
       const matchMeta = {
         ...matchDetails,
-        userTeamsCount: userTeams.length,
+        userTeamsCount: userTeams.length, // Count of unique user teams for the match
         userContestDetails,
-        userTeams,
-        opponentTeams,
+        userTeams,        // Unique user teams for this match (no contest-specific rank/prize)
+        opponentTeams,    // Unique opponent teams for this match (no contest-specific rank/prize)
+        contestLeaderboards: Object.fromEntries(contestLeaderboards), // Full leaderboard per contestId
         displayTimeIST: formatInTimeZone(new Date(matchDetails.dateTimeGMT), 'Asia/Kolkata', 'h:mm a'),
         countdown: getCountdown(new Date(matchDetails.dateTimeGMT)),
       };
+      
+      const allUserContestsAreCancelled = userContestDetails.every(c => c.status === 'cancelled');
 
-      if (matchDetails.matchEnded) {
+      if (allUserContestsAreCancelled) {
+        categorizedMatches.cancelled.push(matchMeta);
+      } else if (matchDetails.matchEnded) {
         categorizedMatches.completed.push(matchMeta);
       } else if (matchDetails.matchStarted) {
         categorizedMatches.live.push(matchMeta);
       } else {
         categorizedMatches.upcoming.push(matchMeta);
       }
+      console.log(`[getMyMatches] matchId: ${mid} → userContestDetails (status/winner/prize):`, userContestDetails.map(c => ({ status: c.status, isWinner: c.isWinner, prizeWon: c.prizeWon, rank: c.rank })));
+      
     }
 
     categorizedMatches.upcoming.sort((a, b) => new Date(a.dateTimeGMT) - new Date(b.dateTimeGMT));
     categorizedMatches.live.sort((a, b) => new Date(a.dateTimeGMT) - new Date(b.dateTimeGMT));
     categorizedMatches.completed.sort((a, b) => new Date(b.dateTimeGMT) - new Date(a.dateTimeGMT));
+    categorizedMatches.cancelled.sort((a, b) => new Date(b.dateTimeGMT) - new Date(a.dateTimeGMT));
 
     return res.json(categorizedMatches);
   } catch (error) {
@@ -443,12 +503,30 @@ exports.getUserContestsForMatch = async (req, res) => {
   }
 };
 
-function formatToIST(utcDateString) {
-  if (!utcDateString) return null;
+// In controllers/cricketController.js (around line 510)
+function formatToIST(dateInput) { // Renamed parameter to be more general
+  if (!dateInput) return null;
+
+  let date;
+  if (dateInput instanceof Date) {
+    // If it's already a Date object, use it directly
+    date = dateInput;
+  } else if (typeof dateInput === 'string') {
+    // If it's a string, ensure it's in a format Date constructor understands,
+    // like ISO 8601, and append 'Z' if it's a local time string to ensure UTC interpretation
+    date = new Date(dateInput.endsWith('Z') ? dateInput : dateInput + 'Z');
+  } else {
+    console.error(`Could not format date to IST: Invalid input type. Expected string or Date, got ${typeof dateInput}`);
+    return null; // Handle unexpected types
+  }
+  
+  // Also, add a check for invalid dates
+  if (isNaN(date.getTime())) {
+    console.error(`Could not format date to IST: Invalid date value derived from ${dateInput}`);
+    return null;
+  }
 
   try {
-    const date = new Date(utcDateString.endsWith('Z') ? utcDateString : utcDateString + 'Z');
-    
     const options = {
       timeZone: 'Asia/Kolkata',
       year: 'numeric',
@@ -462,7 +540,7 @@ function formatToIST(utcDateString) {
 
     return date.toLocaleString('en-IN', options);
   } catch (error) {
-    console.error(`Could not format date to IST: ${utcDateString}`, error);
+    console.error(`Could not format date to IST: ${dateInput}`, error);
     return null;
   }
 }

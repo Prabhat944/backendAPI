@@ -35,7 +35,21 @@ const contestParticipationSchema = new mongoose.Schema({
   prizeWon: {
     type: Number,
     default: 0,
-  }
+  },
+  deductionBreakdown: {
+    type: Object,
+    default: {}
+  },
+  status: {
+    type: String,
+    enum: ['joined', 'refunded', 'won', 'lost', 'pending_result'],
+    default: 'joined'
+  },
+  isWinningCredited: { type: Boolean, default: false },
+  transactionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WalletTransaction'
+  },
 });
 
 contestParticipationSchema.index({ user: 1, matchId: 1, contestId: 1 }, { unique: true });

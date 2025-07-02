@@ -55,18 +55,23 @@
         
 //         // Data for the new contest
 //         const newContestData = {
-//           title: `${template.title}`, // You can add versioning if you like: `${template.title} #${version}`
-//           matchId: match._id.toString(), // CORRECTED: Using match._id
-//           contestTemplateId: template._id,
-//           entryFee: template.entryFee,
-//           totalSpots: template.totalSpots,
-//           prize: template.prize,
-//           prizeBreakupType: template.prizeBreakupType,
-//           prizeDistribution: template.prizeDistribution,
-//           filledSpots: 0,
-//           participants: [],
-//           status: 'upcoming',
-//         };
+//             title: `${template.title}`,
+//             matchId: match._id.toString(),
+//             contestTemplateId: template._id,
+//             baseContestId: existingContestsFromTemplate[0]?._id || null,
+          
+//             type: template.type,
+//             entryFee: template.entryFee,
+//             totalSpots: template.totalSpots,
+//             prize: template.prize,
+//             prizeBreakupType: template.prizeBreakupType,
+//             prizeDistribution: template.prizeDistribution,
+//             signupBonusAllowedPercentage: template.signupBonusAllowedPercentage, // ✅ Add this
+//             filledSpots: 0,
+//             participants: [],
+//             status: 'upcoming',
+//           };
+          
 
 //         if (existingContestsFromTemplate.length === 0) {
 //           // 5a. No contest from this template exists for this match: create the first one.

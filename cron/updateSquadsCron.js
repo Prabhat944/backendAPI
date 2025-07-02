@@ -1,7 +1,5 @@
-// // In a file like jobs/updateSquadsCron.js
-
 // const cron = require('node-cron');
-// const Match = require('../models/UpcomingMatches'); // Using your provided model name
+// const Match = require('../models/UpcomingMatches');
 // const RecentMatch = require('../models/RecentMatch');
 // const Squad = require('../models/Squad');
 // const cricketDataService = require('../services/cricketService');
@@ -23,63 +21,74 @@
 //             console.log('[SQUAD CRON] No upcoming or live matches found to fetch squads for.');
 //             return;
 //         }
+
 //         console.log(`[SQUAD CRON] Found ${allMatchIdsToProcess.length} matches to check for squads.`);
 
 //         for (const matchId of allMatchIdsToProcess) {
 //             try {
-//                 // ✅ FIX: REMOVED THE `if (squadExists) continue;` CHECK.
-//                 // We will now always fetch to get the latest data.
-
 //                 const squadResponse = await cricketDataService.matchSquad(matchId);
 //                 const squadData = squadResponse?.data;
 
-//                 if (Array.isArray(squadData) && squadData.length > 0) {
-//                     const enrichedSquadData = squadData.map(team => ({
-//                         ...team,
-//                         players: team.players.map(player => ({ ...player, teamName: team.teamName }))
-//                     }));
+//                 console.log(`\n[SQUAD DEBUG] Raw squad data for match ${matchId}:`);
+//                 console.log(JSON.stringify(squadData, null, 2));
 
-//                     // This command will now create the document if it doesn't exist,
-//                     // or update the existing one with the full squad data.
-//                     await Squad.findOneAndUpdate(
-//                         { _id: matchId },
-//                         { $set: { squad: enrichedSquadData } },
-//                         { upsert: true, new: true }
-//                     );
-
-//                     // ✅ Best Practice: Update the hasSquad flag on the original match documents.
-//                     await Match.updateOne({ _id: matchId }, { $set: { hasSquad: true } });
-//                     await RecentMatch.updateOne({ _id: matchId }, { $set: { hasSquad: true } });
-                    
-//                     console.log(`[SQUAD CRON] Successfully saved/updated squad for match ${matchId}.`);
+//                 if (!Array.isArray(squadData)) {
+//                     console.warn(`[SQUAD CRON] Invalid squad format for match ${matchId}. Skipping.`);
+//                     continue;
 //                 }
+
+//                 console.log(`[SQUAD DEBUG] Match ${matchId} - Team Count: ${squadData.length}`);
+//                 squadData.forEach((team, index) => {
+//                     console.log(` → Team ${index + 1}: ${team?.teamName} | Players: ${team?.players?.length}`);
+//                 });
+
+//                 if (squadData.length < 2) {
+//                     console.warn(`[SQUAD CRON] Incomplete squad (only ${squadData.length} team) for match ${matchId}. Skipping.`);
+//                     continue;
+//                 }
+
+//                 const enrichedSquadData = squadData.map(team => ({
+//                     ...team,
+//                     players: team.players.map(player => ({
+//                         ...player,
+//                         teamName: team.teamName
+//                     }))
+//                 }));
+
+//                 const saved = await Squad.findOneAndUpdate(
+//                     { _id: matchId },
+//                     { $set: { squad: enrichedSquadData } },
+//                     { upsert: true, new: true }
+//                 );
+
+//                 console.log(`[SQUAD CRON] ✅ Saved squad for match ${matchId}. Total Teams: ${enrichedSquadData.length}`);
+
+//                 // Optional: Also update the hasSquad flag
+//                 await Match.updateOne({ _id: matchId }, { $set: { hasSquad: true } });
+//                 await RecentMatch.updateOne({ _id: matchId }, { $set: { hasSquad: true } });
 //             } catch (error) {
-//                 // This warning is normal and expected if a squad hasn't been announced yet.
-//                 // console.warn(`[SQUAD CRON] Could not fetch squad for match ${matchId}.`);
+//                 console.error(`[SQUAD CRON] ❌ Error fetching/saving squad for match ${matchId}: ${error.message}`);
 //             }
 //         }
         
 //     } catch (error) {
-//         console.error('A critical error occurred in updateAllSquadsJob:', error.message);
+//         console.error('❌ Critical error in updateAllSquadsJob:', error.message);
 //     } finally {
 //         console.log(`SQUAD update job finished at ${new Date().toLocaleTimeString()}.`);
 //     }
 // };
 
 // const scheduleSquadsJob = () => {
-//     // Run the job immediately on start, then schedule it.
-//     updateAllSquadsJob(); 
+//     updateAllSquadsJob(); // run immediately on start
 
 //     cron.schedule('* * * * *', updateAllSquadsJob, {
 //         scheduled: true,
 //         timezone: "Asia/Kolkata"
 //     });
-//     console.log('✅ Match Squads cron job (for upcoming & live) scheduled every 10 minutes.');
+
+//     console.log('✅ Match Squads cron job (for upcoming & live) scheduled to run every minute.');
 // };
 
-// // If you run this file directly (node jobs/updateSquadsCron.js), it will start the scheduler.
-// // Make sure this is only called once in your main application entry point.
-// scheduleSquadsJob(); 
+// scheduleSquadsJob();
 
 // module.exports = { scheduleSquadsJob, updateAllSquadsJob };
-

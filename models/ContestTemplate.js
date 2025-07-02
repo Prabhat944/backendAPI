@@ -1,4 +1,5 @@
 // models/ContestTemplate.js
+
 const mongoose = require('mongoose');
 
 const contestTemplateSchema = new mongoose.Schema({
@@ -9,10 +10,9 @@ const contestTemplateSchema = new mongoose.Schema({
   prize: { type: Number, required: true, min: 0 },
   matchType: { type: String, enum: ['ALL', 'T20', 'ODI', 'TEST'], default: 'ALL' },
   
-  // ✅ --- NEW FIELD ---
-  // This field will control how many teams a single user can join a contest with.
-  // Default is 1, which maintains the current behavior for all your existing H2H and other contests.
   maxTeamsPerUser: { type: Number, default: 1 },
+  // REMOVE THIS FIELD: `allowSignupBonus` is now replaced by `signupBonusAllowedPercentage`
+  // allowSignupBonus: { type: Boolean, default: false },
 
   prizeBreakupType: {
     type: String,
@@ -27,6 +27,13 @@ const contestTemplateSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
+  // The correct field for controlling signup bonus usage
+  signupBonusAllowedPercentage: {
+    type: Number,
+    default: 0, // 0% by default, meaning no signup bonus can be used
+    min: 0,
+    max: 100
+  },
 });
 
 contestTemplateSchema.pre('save', function(next) {

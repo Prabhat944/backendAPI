@@ -1,4 +1,4 @@
-// models/RecentMatch.js
+// models/RecentMatch.js (New flags added)
 
 const mongoose = require('mongoose');
 
@@ -22,19 +22,27 @@ const recentMatchSchema = new mongoose.Schema({
     dateTimeGMT: { type: Date, required: true, index: true },
     teams: [{ type: String }],
     teamInfo: [{ name: String, shortname: String, img: String }],
-    
-    // The new 'score' array, using our sub-schema
-    score: [scoreSchema], 
-
+    score: [scoreSchema],
     fantasyEnabled: { type: Boolean },
     bbbEnabled: { type: Boolean },
     hasSquad: { type: Boolean },
     matchStarted: { type: Boolean },
-    matchEnded: { type: Boolean }
+    matchEnded: { type: Boolean },
+    
+    // ✅ NEW KEY ADDED HERE:
+    resultsProcessed: {
+        type: Boolean,
+        default: false
+    },
+    // ✅ NEW KEY ADDED HERE:
+    contestCancellationCompleted: {
+        type: Boolean,
+        default: false
+    }
 }, {
-    _id: false,
-    timestamps: true 
+    timestamps: true // This is already present
 });
+
 
 const RecentMatch = mongoose.model('RecentMatch', recentMatchSchema);
 

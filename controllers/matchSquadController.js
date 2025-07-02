@@ -1,46 +1,77 @@
-// your controller file
-
-const Squad = require('../models/Squad'); // Import the new Squad model
+const Squad = require('../models/Squad');
+const Match = require('../models/UpcomingMatches');
+const PlayerSeasonStats = require('../models/PlayerSeasonStats');
 const redisClient = require('../utils/redisClient');
-const { getPlayerSelectionStats } = require('./statsController'); // This remains
+const { getPlayerSelectionStats } = require('./statsController');
 
 exports.getMatchSquad = async (req, res) => {
     try {
         const { id: matchId } = req.query;
-        const redisKey = `view:squad:${matchId}`; // A good key for caching the final view
+        if (!matchId) {
+            return res.status(400).json({ message: 'A match ID is required.' });
+        }
+        
+        const redisKey = `view:squad:${matchId}`;
 
-        // 1. Check Redis for the cached squad
-        let squadData = await redisClient.get(redisKey);
+        // 1. Check Redis for the fully enriched squad
+        let cachedData = await redisClient.get(redisKey);
 
-        if (squadData) {
-            console.log(`[getMatchSquad] Cache HIT for squad: ${matchId}`);
-            squadData = JSON.parse(squadData);
-        } else {
-            console.log(`[getMatchSquad] Cache MISS for squad: ${matchId}`);
-            // 2. If not in cache, get from our MongoDB
-            const squadDoc = await Squad.findById(matchId).lean();
+        if (cachedData) {
+            console.log(`[getMatchSquad] Cache HIT for enriched squad: ${matchId}`);
+            const finalSquad = JSON.parse(cachedData);
             
-            if (squadDoc) {
-                squadData = squadDoc.squad; // The actual array of teams is in the .squad property
-                // 3. Save the result to Redis for the next request
-                await redisClient.setEx(redisKey, 300, JSON.stringify(squadData)); // Cache for 5 minutes
-            } else {
-                squadData = []; // No squad found
-            }
-        }
-      
-        // The logic for fetching stats can remain the same
-        let stats = await redisClient.get(`stats:${matchId}`);
-        if (!stats) {
-            stats = await getPlayerSelectionStats(matchId);
+            let stats = await redisClient.get(`stats:${matchId}`);
+            stats = stats ? JSON.parse(stats) : await getPlayerSelectionStats(matchId);
+
+            return res.json({ squad: finalSquad, stats });
+
         } else {
-            stats = JSON.parse(stats);
+            console.log(`[getMatchSquad] Cache MISS for enriched squad: ${matchId}`);
+            
+            // --- CACHE MISS LOGIC ---
+            // 2. Get all required data from MongoDB
+            const [squadDoc, matchDoc] = await Promise.all([
+                Squad.findById(matchId).lean(),
+                Match.findById(matchId).lean()
+            ]);
+            
+            if (!squadDoc || !matchDoc) {
+                return res.status(404).json({ message: 'Squad or Match details not found.' });
+            }
+
+            // 3. Get the player points using the seriesId
+            const seasonStats = await PlayerSeasonStats.find({ seasonId: matchDoc.seriesId }).lean();
+            
+            // 4. Create a fast lookup Map for the ENTIRE stats object per player
+            const statsMap = new Map(seasonStats.map(stat => [stat.playerId, stat]));
+
+            // 5. Enrich the squad data with all required stats fields
+            const enrichedSquad = squadDoc.squad.map(team => ({
+              ...team,
+              players: team.players.map(player => {
+                const playerStats = statsMap.get(player.id);
+                return {
+                  ...player,
+                  // Use the stats object to get all required fields, defaulting to 0
+                  points: playerStats?.totalPoints ?? 0,
+                  totalMatchesPlayed: playerStats?.totalMatchesPlayed ?? 0,
+                  averagePoints: playerStats?.averagePoints ?? 0,
+                };
+              }),
+            }));
+
+            // 6. Cache the NEW, fully enriched squad data in Redis
+            await redisClient.setEx(redisKey, 300, JSON.stringify(enrichedSquad));
+
+            // 7. Fetch the separate selection stats
+            let stats = await redisClient.get(`stats:${matchId}`);
+            stats = stats ? JSON.parse(stats) : await getPlayerSelectionStats(matchId);
+            
+            // 8. Send the response
+            return res.json({ squad: enrichedSquad, stats });
         }
-
-        // The property 'squad' from the original response is now 'squadData'
-        res.json({ squad: squadData, stats });
-
     } catch (err) {
+        console.error('❌ Error fetching match squad:', err);
         res.status(500).json({ message: 'Failed to fetch match squad', error: err.message });
     }
 };

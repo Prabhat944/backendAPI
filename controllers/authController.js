@@ -6,23 +6,57 @@ const { OAuth2Client } = require('google-auth-library');
 const sendEmail = require('../utils/sendEmail');
 const generateReferCode = require('../utils/referCode');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-const { sendOTPViaSMS } = require('../utils/sendSms'); // adjust path if needed
+const { sendOTPViaSMS } = require('../utils/sendSms');
 const axios = require('axios');
 const mongoose = require('mongoose');
 const cloudinary = require('cloudinary').v2;
-const fs = require('fs');
+const fs = require('fs').promises;
 
+const BlacklistedToken = require('../models/BlacklistedToken');
 
 const JWT_SECRET = process.env.JWT_SECRET;
+// This URL must point to your Wallet Service.
+// You confirmed the User Service is on 5001, so the Wallet service is likely on 3000 or another port.
+const WALLET_SERVICE_URL = process.env.WALLET_SERVICE_URL || 'http://localhost:3000'; 
+
+// --- Internal Helper Function to Call Wallet Service ---
+const triggerReferralBonus = async (referrerId, refereeId) => {
+  try {
+    if (!referrerId || !refereeId) {
+      console.error('Missing referrerId or refereeId');
+      return;
+    }
+    
+    console.log(`Attempting to trigger referral bonus for referrer: ${referrerId} and referee: ${refereeId}`);
+    
+    const response = await axios.post(`${WALLET_SERVICE_URL}/api/wallet/referral-bonus`, {
+      referrerId: referrerId.toString(), // Ensure string format
+      refereeId: refereeId.toString()    // Ensure string format
+    }, {
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    console.log(`✅ Successfully notified Wallet Service. Response:`, response.data);
+  } catch (error) {
+    console.error(`🔴 CRITICAL ERROR: Failed to call Wallet Service.`, {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message
+    });
+  }
+};
+
+
 // Signup
 exports.signup = async (req, res) => {
   const { name, email, mobile, password, referCode } = req.body;
   try {
     if (!name || !email || !password) {
       return res.status(400).json({ message: "Name, email, and password are required." });
-  }
+    }
     const existingUser = await User.findOne({ $or: [{ email }, { mobile }] });
-    console.log('Existing User:', existingUser);
     if (existingUser) return res.status(400).json({ message: 'User already exists' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -37,8 +71,10 @@ exports.signup = async (req, res) => {
       referralCounted: false,
     });
 
+    let referrer = null; // Variable to hold the referrer if found
+
     if (referCode) {
-      const referrer = await User.findOne({ referCode });
+      referrer = await User.findOne({ referCode });
       if (referrer) {
         newUser.referredBy = referCode;
         referrer.referralCount += 1;
@@ -47,7 +83,16 @@ exports.signup = async (req, res) => {
       }
     }
 
-    await newUser.save();
+    // ✅ --- FIX --- ✅
+    // Save the new user to the database BEFORE triggering the bonus.
+    await newUser.save(); 
+
+    // Now that the user is saved, if a valid referrer was found, trigger the bonus.
+    if (referrer) {
+      triggerReferralBonus(referrer._id, newUser._id);
+    }
+    // --- END OF FIX ---
+
     res.status(201).json({ message: 'User registered successfully' });
   } catch (err) {
     console.error('Signup error:', err);
@@ -55,6 +100,73 @@ exports.signup = async (req, res) => {
   }
 };
 
+
+//Send OTP
+exports.sendOtp = async (req, res) => {
+  const { mobile, referCode } = req.body;
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  try {
+    await OTP.findOneAndUpdate(
+      { mobile },
+      { otp, createdAt: new Date() },
+      { upsert: true, new: true }
+    );
+
+    await sendOTPViaSMS(mobile, otp);
+
+    let user = await User.findOne({ mobile });
+    
+    if (!user) {
+      const adjectives = ['Swift', 'Mighty', 'Clever', 'Brave', 'Dashing', 'Royal', 'Super', 'Grand', 'Fearless', 'Agile', 'Prime'];
+      const nouns = ['Striker', 'Captain', 'Challenger', 'Knight', 'Eagle', 'Titan', 'Panther', 'King', 'Master', 'Star', 'Lion'];
+      const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+      const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
+      const baseName = `${randomAdjective}${randomNoun}`;
+
+      const newUserId = new mongoose.Types.ObjectId();
+      const finalName = `${baseName}_${newUserId.toString().slice(-5)}`;
+
+      user = new User({
+        _id: newUserId,
+        name: finalName,
+        mobile,
+        signupMode: 'otp',
+        referCode: generateReferCode(),
+      });
+
+      let referrer = null; // Variable to hold the referrer
+
+      if (referCode) {
+        referrer = await User.findOne({ referCode });
+        if (referrer) {
+          user.referredBy = referCode;
+          referrer.referralCount += 1;
+          await referrer.save();
+          user.referralCounted = true;
+        }
+      }
+
+      // ✅ --- FIX --- ✅
+      // Save the new user to the database BEFORE triggering the bonus.
+      await user.save();
+
+      // Now that the user is saved, if a valid referrer was found, trigger the bonus.
+      if (referrer) {
+        triggerReferralBonus(referrer._id, user._id);
+      }
+      // --- END OF FIX ---
+    }
+
+    res.json({ message: 'OTP sent successfully' });
+
+  } catch (err) {
+    console.error('❌ sendOtp Error:', err);
+    res.status(500).json({ message: err.message || 'Failed to send OTP' });
+  }
+};
+
+// --- ALL OTHER FUNCTIONS (login, logout, getUserById, etc.) remain unchanged ---
 
 // Login
 exports.login = async (req, res) => {
@@ -74,6 +186,35 @@ exports.login = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+// Logout
+exports.logout = async (req, res) => {
+  const token = req.token; 
+
+  if (!token) {
+    return res.status(400).json({ message: 'No token found in request. User not authenticated.' });
+  }
+
+  try {
+    const decodedToken = jwt.decode(token);
+
+    if (!decodedToken || !decodedToken.exp) {
+      return res.status(400).json({ message: 'Invalid token format or missing expiry.' });
+    }
+
+    const expiresAt = new Date(decodedToken.exp * 1000);
+
+    await BlacklistedToken.create({ token, expiresAt });
+
+    console.log(`User ${req.user._id} logged out. Token blacklisted until ${expiresAt.toLocaleString()}.`);
+    res.status(200).json({ message: 'Logged out successfully.' });
+
+  } catch (err) {
+    console.error('Error during logout/token blacklisting:', err);
+    res.status(500).json({ message: 'Failed to log out due to server error.' });
+  }
+};
+
 
 // Request Password Reset
 exports.requestPasswordReset = async (req, res) => {
@@ -104,70 +245,16 @@ exports.resetPassword = async (req, res) => {
     res.status(400).json({ message: 'Invalid or expired token' });
   }
 };
-
-//Send OTP
-exports.sendOtp = async (req, res) => {
-  const { mobile, referCode } = req.body;
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-console.log('cehck the otp here', otp);
+exports.getUserById = async (req, res) => {
   try {
-    await OTP.findOneAndUpdate(
-      { mobile },
-      { otp, createdAt: new Date() },
-      { upsert: true, new: true }
-    );
-
-    await sendOTPViaSMS(mobile, otp);
-
-    let user = await User.findOne({ mobile });
-    console.log('check the user here fot otp', user)
+    const user = await User.findOne({ _id: req.params.id }).select('-password'); // ✅ FIXED
     if (!user) {
-      
-      // --- FINAL, ROBUST NAME GENERATION ---
-
-      // Step 1: Generate the creative base name
-      const adjectives = ['Swift', 'Mighty', 'Clever', 'Brave', 'Dashing', 'Royal', 'Super', 'Grand', 'Fearless', 'Agile', 'Prime'];
-      const nouns = ['Striker', 'Captain', 'Challenger', 'Knight', 'Eagle', 'Titan', 'Panther', 'King', 'Master', 'Star', 'Lion'];
-      const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
-      const randomNoun = nouns[Math.floor(Math.random() * nouns.length)];
-      const baseName = `${randomAdjective}${randomNoun}`;
-
-      // Step 2: Manually create a new, unique ObjectId for our new user.
-      const newUserId = new mongoose.Types.ObjectId();
-      
-      // Step 3: Create the guaranteed unique name using this new ID.
-      const finalName = `${baseName}_${newUserId.toString().slice(-5)}`;
-console.log('check final name here', finalName);
-      // Step 4: Create the new user instance with ALL data provided at once.
-      user = new User({
-        _id: newUserId, // Explicitly set the new ID
-        name: finalName,  // Explicitly set the new name
-        mobile,
-        signupMode: 'otp',
-        referCode: generateReferCode(),
-      });
-      console.log('check the user here', user);
-      // --- END OF NEW LOGIC ---
-
-      // Step 5: Handle referrals and save the user
-      if (referCode) {
-        const referrer = await User.findOne({ referCode });
-        if (referrer) {
-          user.referredBy = referCode;
-          referrer.referralCount += 1;
-          await referrer.save();
-          user.referralCounted = true;
-        }
-      }
-
-      await user.save();
+      return res.status(404).json({ message: 'User not found' });
     }
-
-    res.json({ message: 'OTP sent successfully' });
-
-  } catch (err) {
-    console.error('❌ sendOtp Error:', err);
-    res.status(500).json({ message: err.message || 'Failed to send OTP' });
+    res.status(200).json(user);
+  } catch (error) {
+    console.error('Error in getUserById:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -226,7 +313,6 @@ exports.facebookLogin = async (req, res) => {
     }
   
     try {
-      // Verify access token and get user info
       const fbURL = `https://graph.facebook.com/v12.0/${userID}?fields=id,name,email&access_token=${accessToken}`;
       const { data } = await axios.get(fbURL);
   
@@ -237,11 +323,10 @@ exports.facebookLogin = async (req, res) => {
       let user = await User.findOne({ email: data.email });
   
       if (!user) {
-        // Create new user
         user = await User.create({
           name: data.name,
           email: data.email,
-          password: null, // No password needed
+          password: null,
           mobile: null,
         });
       }
@@ -283,30 +368,24 @@ exports.updateUser = async (req, res) => {
     try {
       const userId = req.user._id;
   
-      // 1. Check if a file was actually uploaded.
-      // The file is available at req.file thanks to the 'multer' middleware we'll set up.
       if (!req.file) {
         return res.status(400).json({ message: 'No image file provided.' });
       }
   
-      // 2. Upload the file to Cloudinary.
-      // The 'path' property points to the temporary location where multer saved the file.
       const result = await cloudinary.uploader.upload(req.file.path, {
-        folder: 'fantasy_app_profiles', // Optional: Organizes uploads into a specific folder
+        folder: 'fantasy_app_profiles',
         resource_type: 'image',
-        transformation: [ // Optional: Auto-transforms the image for optimization
+        transformation: [
           { width: 250, height: 250, gravity: "face", crop: "fill" }
         ]
       });
   
-      // 3. Once the upload is complete, we don't need the temporary file anymore.
-      fs.unlinkSync(req.file.path);
+      await fs.unlink(req.file.path);
   
-      // 4. Update the user's document with the secure URL from Cloudinary.
       const updatedUser = await User.findByIdAndUpdate(
         userId,
         { $set: { profileImage: result.secure_url } },
-        { new: true } // 'new: true' returns the updated document
+        { new: true }
       ).select('profileImage');
   
       if (!updatedUser) {
@@ -320,10 +399,14 @@ exports.updateUser = async (req, res) => {
   
     } catch (error) {
       console.error('Error uploading profile image:', error);
-      // If a temp file was created but an error occurred, try to delete it.
-      if (req.file) {
-        fs.unlinkSync(req.file.path);
+      if (req.file && req.file.path) {
+        try {
+            await fs.unlink(req.file.path);
+        } catch (unlinkErr) {
+            console.error('Error deleting temp file:', unlinkErr);
+        }
       }
       res.status(500).json({ message: 'Image upload failed.', error: error.message });
     }
   };
+

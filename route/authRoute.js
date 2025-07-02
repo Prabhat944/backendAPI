@@ -10,7 +10,9 @@ const {
   verifyOtp,
   googleLogin,
   facebookLogin,
-  uploadProfileImage
+  uploadProfileImage,
+  logout,
+  getUserById
 } = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
 const upload = multer({ dest: 'uploads/' });
@@ -24,12 +26,12 @@ router.post('/send-otp', sendOtp);
 router.post('/verify-otp', verifyOtp);
 router.post('/google-login', googleLogin);
 router.post('/facebook-login', facebookLogin);
+router.post('/logout', authMiddleware, logout);
 router.post(
   '/upload-profile-image',
   authMiddleware,
   upload.single('profileImage'),
   uploadProfileImage
 );
-
 
 module.exports = router;
