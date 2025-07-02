@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 // Ensure this path correctly points to your modified calculateContestResults function
 const {calculateContestResults,createDummyContest, getContestsByMatchId} = require('../utils/calculateContestResults'); 
-const { groupByTitle } = require('../utils/customFunctions');
 
 router.post('/calculate-results', async (req, res) => {
   const { matchId, contestId } = req.body;
@@ -79,7 +78,6 @@ router.get('/get-contests', async (req, res) => {
       res.status(200).json({ 
         success: true, 
         message: result.message, 
-        // data: groupByTitle(result),
         data: result
       });
     } catch (error) {
