@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 
 const contestTemplateSchema = new mongoose.Schema({
   title: { type: String, required: true, trim: true },
-  type: { type: String, enum: ['GRAND', 'MINI_GL', 'SMALL', 'H2H', 'WINNER_TAKE_ALL'], required: true },
+  type: { type: String, enum: ['GRAND', 'MINI_GL', 'SMALL', 'H2H', 'WINNER_TAKE_ALL', 'TEAM_CONTEST'], required: true },
   entryFee: { type: Number, required: true, min: 0 },
   totalSpots: { type: Number, required: true, min: 2 },
   prize: { type: Number, required: true, min: 0 },
@@ -19,6 +19,10 @@ const contestTemplateSchema = new mongoose.Schema({
     enum: ['winnerTakesAll', 'percentageSplit', 'fixedAmountSplit'],
     required: true,
     default: 'winnerTakesAll',
+  },
+  teamContestConfig: {
+    teams: { type: Number }, // e.g., 2 for "Team A" and "Team B"
+    spotsPerTeam: { type: Number } // e.g., 2 spots per team
   },
   prizeDistribution: { 
     type: mongoose.Schema.Types.Mixed,

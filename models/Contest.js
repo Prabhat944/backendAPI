@@ -20,7 +20,7 @@ const contestSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['GRAND', 'MINI_GL', 'SMALL', 'H2H', 'WINNER_TAKE_ALL'],
+    enum: ['GRAND', 'MINI_GL', 'SMALL', 'H2H', 'WINNER_TAKE_ALL', 'TEAM_CONTEST'],
     required: true,
   },
   entryFee: { type: Number, required: true, min: 0 },

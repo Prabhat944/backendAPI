@@ -12,10 +12,11 @@ const {
   facebookLogin,
   uploadProfileImage,
   logout,
-  getUserById
+  validateToken
 } = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
 const upload = multer({ dest: 'uploads/' });
+
 
 console.log('---------s')
 router.post('/signup', signup);
@@ -33,5 +34,6 @@ router.post(
   upload.single('profileImage'),
   uploadProfileImage
 );
+router.post('/users/validate-token', validateToken);
 
 module.exports = router;

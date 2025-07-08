@@ -16,6 +16,7 @@ const contestParticipationSchema = new mongoose.Schema({
     required: true
   },
   teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', required: true },
+  contestTeam: { type: String },
   joinedAt: {
     type: Date,
     default: Date.now
@@ -52,6 +53,7 @@ const contestParticipationSchema = new mongoose.Schema({
   },
 });
 
-contestParticipationSchema.index({ user: 1, matchId: 1, contestId: 1 }, { unique: true });
+// In contestParticipationSchema.js
+contestParticipationSchema.index({ user: 1, matchId: 1, contestId: 1, teamId: 1 }, { unique: true });
 
 module.exports = mongoose.model('ContestParticipation', contestParticipationSchema);

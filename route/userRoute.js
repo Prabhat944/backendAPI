@@ -10,6 +10,7 @@ router.get('/me', authMiddleware, authController.getCurrentUser);
 router.put('/update', authMiddleware, authController.updateUser);
 router.post('/join', authMiddleware, contestController.joinContest);
 router.post('/multi-join', authMiddleware, contestController.joinMultipleContests);
+router.post('/switch-team', authMiddleware, contestController.switchTeam);
 router.get(
     '/match/:matchId', 
     contestController.getContestsByMatchId
@@ -32,6 +33,6 @@ router.get('/by-id/:userId', async (req, res) => {
       res.status(500).json({ message: 'Server error' });
     }
   });
-  
-
+router.post('/contests/join-team-contest', authMiddleware, contestController.joinTeamContest); // Add this line
+router.delete('/teams/:teamId', authMiddleware, contestController.deleteTeam);
 module.exports = router;

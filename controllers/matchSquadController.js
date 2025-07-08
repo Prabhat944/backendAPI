@@ -1,73 +1,66 @@
 const Squad = require('../models/Squad');
-const Match = require('../models/UpcomingMatches');
+const UpcomingMatches = require('../models/UpcomingMatches');
 const PlayerSeasonStats = require('../models/PlayerSeasonStats');
 const redisClient = require('../utils/redisClient');
 const { getPlayerSelectionStats } = require('./statsController');
+const RecentMatches = require('../models/RecentMatch');
 
 exports.getMatchSquad = async (req, res) => {
     try {
-        const { id: matchId } = req.query;
+        const matchId = (req.query.id || '').trim();
+        console.log('check matchId', matchId);
         if (!matchId) {
             return res.status(400).json({ message: 'A match ID is required.' });
         }
-        
-        const redisKey = `view:squad:${matchId}`;
 
-        // 1. Check Redis for the fully enriched squad
+        console.log({ matchId, typeofMatchId: typeof matchId });
+
+        const redisKey = `view:squad:${matchId}`;
         let cachedData = await redisClient.get(redisKey);
 
         if (cachedData) {
             console.log(`[getMatchSquad] Cache HIT for enriched squad: ${matchId}`);
             const finalSquad = JSON.parse(cachedData);
-            
             let stats = await redisClient.get(`stats:${matchId}`);
             stats = stats ? JSON.parse(stats) : await getPlayerSelectionStats(matchId);
-
             return res.json({ squad: finalSquad, stats });
-
         } else {
             console.log(`[getMatchSquad] Cache MISS for enriched squad: ${matchId}`);
-            
-            // --- CACHE MISS LOGIC ---
-            // 2. Get all required data from MongoDB
-            const [squadDoc, matchDoc] = await Promise.all([
-                Squad.findById(matchId).lean(),
-                Match.findById(matchId).lean()
-            ]);
-            
+
+            const squadDoc = await Squad.findById(matchId).lean();
+            console.log('Squad Found:', !!squadDoc);
+
+            let matchDoc = await UpcomingMatches.findOne({ _id: matchId }).lean();
+            console.log('Full matchDoc object----->>..:', matchDoc); 
+            if (!matchDoc) {
+                matchDoc = await RecentMatches.findOne({ _id: matchId }).lean();
+            }
+            console.log('Match Found:', !!matchDoc);
+
             if (!squadDoc || !matchDoc) {
                 return res.status(404).json({ message: 'Squad or Match details not found.' });
             }
-
-            // 3. Get the player points using the seriesId
+            console.log('Attempting to fetch stats for seasonId:', matchDoc.seriesId);
             const seasonStats = await PlayerSeasonStats.find({ seasonId: matchDoc.seriesId }).lean();
-            
-            // 4. Create a fast lookup Map for the ENTIRE stats object per player
+            console.log('Player stats found:', seasonStats);
             const statsMap = new Map(seasonStats.map(stat => [stat.playerId, stat]));
 
-            // 5. Enrich the squad data with all required stats fields
             const enrichedSquad = squadDoc.squad.map(team => ({
-              ...team,
-              players: team.players.map(player => {
-                const playerStats = statsMap.get(player.id);
-                return {
-                  ...player,
-                  // Use the stats object to get all required fields, defaulting to 0
-                  points: playerStats?.totalPoints ?? 0,
-                  totalMatchesPlayed: playerStats?.totalMatchesPlayed ?? 0,
-                  averagePoints: playerStats?.averagePoints ?? 0,
-                };
-              }),
+                ...team,
+                players: team.players.map(player => {
+                    const playerStats = statsMap.get(player.id);
+                    return {
+                        ...player,
+                        points: playerStats?.totalPoints ?? 0,
+                        totalMatchesPlayed: playerStats?.totalMatchesPlayed ?? 0,
+                        averagePoints: playerStats?.averagePoints ?? 0,
+                    };
+                }),
             }));
 
-            // 6. Cache the NEW, fully enriched squad data in Redis
             await redisClient.setEx(redisKey, 300, JSON.stringify(enrichedSquad));
-
-            // 7. Fetch the separate selection stats
             let stats = await redisClient.get(`stats:${matchId}`);
             stats = stats ? JSON.parse(stats) : await getPlayerSelectionStats(matchId);
-            
-            // 8. Send the response
             return res.json({ squad: enrichedSquad, stats });
         }
     } catch (err) {

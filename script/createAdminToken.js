@@ -17,7 +17,7 @@ const adminPayload = {
 
 // Define token options (e.g., expiry)
 const options = {
-    expiresIn: '1h', // Admin tokens usually have shorter expiry for security
+    expiresIn: '23h', // Admin tokens usually have shorter expiry for security
 };
 
 try {
