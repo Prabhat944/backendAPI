@@ -452,3 +452,32 @@ exports.updateUser = async (req, res) => {
         res.status(500).json({ message: 'Token validation failed.' });
     }
 };
+
+exports.searchUsers = async (req, res) => {
+  // The user making the request (from your auth middleware)
+  const currentUserId = req.user.id; 
+
+  const keyword = req.query.search
+    ? {
+        $or: [
+          { name: { $regex: req.query.search, $options: 'i' } },
+          { email: { $regex: req.query.search, $options: 'i' } },
+        ],
+      }
+    : {};
+
+  // Find users matching the keyword but exclude the user making the request
+  const users = await User.find(keyword).find({ _id: { $ne: currentUserId } }).select('id name profileImage');
+
+  res.json(users);
+};
+
+exports.getUserDetailsById = async (req, res) => {
+  // Find the user but only select the fields needed by other services
+  const user = await User.findById(req.params.id).select('name profileImage');
+  if (user) {
+      res.json(user);
+  } else {
+      res.status(404).json({ message: 'User not found' });
+  }
+};

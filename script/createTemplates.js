@@ -50,19 +50,19 @@ const createContestTemplate = async () => {
         // Using findOneAndUpdate with upsert:true is a safe way to create or update a template.
         // It will find the template by its unique title and update it, or create it if it doesn't exist.
         await ContestTemplate.findOneAndUpdate(
-            { title: "Mega Contest 50k (Top 60%)" },
+            { title: "Mega Contest 90k (Top 60%)" },
             {
                 $set: {
                     type: "MINI_GL",
-                    entryFee: 2500,
-                    totalSpots: 25,
-                    prize: 50000,
+                    entryFee: 1350,
+                    totalSpots: 80,
+                    prize: 90000,
                     matchType: "ALL",
                     prizeBreakupType: "fixedAmountSplit",
-                    prizeDistribution: proContestPrizeDistribution,
+                    prizeDistribution: megaContestPrizeDistribution,
                     isActive: true,
                     // ✅ --- ADDED THIS LINE ---
-                    maxTeamsPerUser: 2 // Allows users to join with up to 10 different teams
+                    maxTeamsPerUser: 5 // Allows users to join with up to 10 different teams
                 }
             },
             { upsert: true, new: true }

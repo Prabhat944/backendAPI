@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_key';
 
-if (JWT_SECRET === 'your_jwt_secret_key') {
+if (JWT_SECRET === 'supersecretjwtkey') {
     console.warn("⚠️ WARNING: You are using the fallback JWT secret. Ensure your .env has a secure JWT_SECRET set.");
 }
 

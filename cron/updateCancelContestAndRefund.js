@@ -15,7 +15,8 @@
 //   try {
 //     console.log(`🚫 Cancelling contest: ${contest._id}`);
     
-//     const participations = await ContestParticipation.find({ contestId: contest._id });
+//     // 👇 --- THIS LINE IS NOW UPDATED ---
+//     const participations = await ContestParticipation.find({ contestId: contest._id }).lean();
     
 //     await Contest.updateOne({ _id: contest._id }, {
 //       $set: {
@@ -26,6 +27,9 @@
 
 //     for (const p of participations) {
 //       if (p.isRefunded) continue;
+
+//       // You can add this log for final verification
+//       // console.log(`Sending refund for user ${p.user} with breakdown:`, p.deductionBreakdown);
 
 //       await axios.post(`${WALLET_SERVICE_URL}/api/wallet/refund`, {
 //         userId: p.user,
@@ -58,13 +62,13 @@
 //     matchStarted: true,
 //     matchEnded: false,
 //     contestCancellationCompleted: { $ne: true }
-//   });
+//   }).lean();
 
 //   for (const match of matches) {
 //     const contests = await Contest.find({
 //       matchId: match._id,
 //       status: { $nin: ['cancelled', 'live', 'cancellation_failed'] },
-//     });
+//     }).lean();
 
 //     for (const contest of contests) {
 //       if (contest.filledSpots < contest.totalSpots) {
@@ -87,13 +91,13 @@
 //   const matches = await RecentMatch.find({
 //     matchEnded: true,
 //     contestCancellationCompleted: { $ne: true }
-//   });
+//   }).lean();
 
 //   for (const match of matches) {
 //     const contests = await Contest.find({
 //       matchId: match._id,
 //       status: { $nin: ['cancelled', 'cancellation_failed'] },
-//     });
+//     }).lean();
 
 //     for (const contest of contests) {
 //       if (contest.filledSpots < contest.totalSpots) {
@@ -113,7 +117,7 @@
 //     console.log('✅ Cron: Match Starts - every minute');
 
 //     cron.schedule('*/2 * * * *', handleCompletedMatchCancellations);
-//     console.log('✅ Cron: Completed Match Cancellations - every 5 mins');
+//     console.log('✅ Cron: Completed Match Cancellations - every 2 mins');
 //   });
 
 //   mongoose.connection.on('error', err => {

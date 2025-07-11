@@ -5,7 +5,8 @@
 // const axios = require('axios');
 
 // // We need the Match model from the Contest/User service to check match status
-// const Contest = require('../models/Contest'); // Or Match model if you have a separate one
+// // const Contest = require('../models/Contest'); // Or Match model if you have a separate one
+// const RecentMatch = require('../models/RecentMatch');
 // // We need the MatchOffer model from the Offer Service (via an API call or direct DB access if sharing DB)
 // // For this example, we'll get offers from the Offer Service via an API endpoint.
 // // Let's assume you create a helper endpoint in Offer Service to get unprocessed offers.
@@ -49,15 +50,17 @@
 //         for (const offer of unprocessedOffers) {
 //             // Step 2: For each unprocessed offer, check the status of the corresponding match
 //             // in the Contest/User service database.
-//             const match = await Contest.findOne({ matchId: offer.matchId }).select('status').lean();
-
+//             // const match = await Contest.findOne({ matchId: offer.matchId }).select('status').lean();
+//             // This now correctly queries the 'recentmatches' collection for the overall match status
+//                // Find the match by its primary _id field
+//                const match = await RecentMatch.findOne({ _id: offer.matchId }).select('status matchEnded').lean();
 //             if (!match) {
 //                 console.log(`ℹ️ Skipping offer for match ${offer.matchId}: Match not found in local DB.`);
 //                 continue;
 //             }
             
 //             // Step 3: If the match is 'completed', trigger the processing in the Offer Service
-//             if (match.status === 'completed') {
+//             if (match && match.matchEnded === true) {
 //                 console.log(`▶️ Match ${offer.matchId} is completed. Triggering offer processing...`);
 
 //                 try {

@@ -12,7 +12,9 @@ const {
   facebookLogin,
   uploadProfileImage,
   logout,
-  validateToken
+  validateToken,
+  searchUsers,
+  getUserDetailsById
 } = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
 const upload = multer({ dest: 'uploads/' });
@@ -35,5 +37,6 @@ router.post(
   uploadProfileImage
 );
 router.post('/users/validate-token', validateToken);
-
+router.get('/search', authMiddleware, searchUsers);
+router.get('/:id', authMiddleware, getUserDetailsById);
 module.exports = router;
