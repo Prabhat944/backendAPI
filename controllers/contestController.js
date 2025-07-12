@@ -191,6 +191,7 @@ exports.joinContest = async (req, res) => {
 
         // ✅ Notify the Offer Service (This will not crash the main function if it fails)
         try {
+          console.log("tag here======>",{ userId, matchId, contestId });
             await axios.post(`${OFFER_SERVICE_URL}/api/offerRoutes/track-progress`, {
                 userId: userId,
                 matchId: matchId,
@@ -424,6 +425,7 @@ exports.joinMultipleContests = async (req, res) => {
         joinedCount++;
 
         try {
+          console.log("tag here======>1",{ userId, matchId });
             await axios.post(`${OFFER_SERVICE_URL}/api/offerRoutes/track-progress`, { userId, matchId },
               {
                 headers: { 'Authorization': `Bearer ${INTERNAL_API_TOKEN}` } // Added auth header
@@ -723,10 +725,12 @@ exports.joinTeamContest = async (req, res) => {
           // Notify the Offer Service after successfully joining the contest
           try {
             const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN;
-            await axios.post(`${OFFER_SERVICE_URL}/api/offers/track-progress`, 
+            console.log("tag here======>2",{ userId, matchId, contestId });
+            await axios.post(`${OFFER_SERVICE_URL}/api/offerRoutes/track-progress`, 
               {
                 userId: userId,
-                matchId: matchId
+                matchId: matchId,
+                contestId: contestId
               },
               {
                 headers: { 'Authorization': `Bearer ${INTERNAL_API_TOKEN}` }
