@@ -35,4 +35,14 @@ router.get('/by-id/:userId', async (req, res) => {
   });
 router.post('/contests/join-team-contest', authMiddleware, contestController.joinTeamContest); // Add this line
 router.delete('/teams/:teamId', authMiddleware, contestController.deleteTeam);
+router.get(
+    '/internal/participations-by-user-match',
+    authMiddleware.protectInternal, // Secure this endpoint
+    contestController.getParticipationsForBackfill
+);
+router.get(
+    '/internal/participants-by-match/:matchId',
+    authMiddleware.protectInternal, // Secure this endpoint
+    contestController.getUniqueParticipantsByMatch
+);
 module.exports = router;

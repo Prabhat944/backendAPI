@@ -193,7 +193,8 @@ exports.joinContest = async (req, res) => {
         try {
             await axios.post(`${OFFER_SERVICE_URL}/api/offerRoutes/track-progress`, {
                 userId: userId,
-                matchId: matchId
+                matchId: matchId,
+                contestId: contestId
             },
             {
               headers: { 'Authorization': `Bearer ${INTERNAL_API_TOKEN}` } // Added auth header
@@ -803,5 +804,64 @@ exports.deleteTeam = async (req, res) => {
   } catch (err) {
       console.error('Error in deleteTeam:', err);
       return res.status(500).json({ message: 'An internal server error occurred.' });
+  }
+};
+
+// In your Contest Service's contestController.js
+
+/**
+ * [INTERNAL] For backfilling data. Gets all contest IDs a user participated in for a specific match.
+ */
+exports.getParticipationsForBackfill = async (req, res) => {
+  const { userId, matchId } = req.query;
+
+  if (!userId || !matchId) {
+      return res.status(400).json({ message: 'userId and matchId are required query parameters.' });
+  }
+
+  try {
+      // 👇 --- THIS IS THE CORRECTED QUERY ---
+      // We convert the userId string into a MongoDB ObjectId before searching.
+      const participations = await ContestParticipation.find({
+          user: new mongoose.Types.ObjectId(userId), 
+          matchId: matchId
+      }).select('contestId -_id').lean();
+
+      const contestIds = participations.map(p => p.contestId.toString());
+
+      res.status(200).json({ contestIds });
+
+  } catch (error) {
+      console.error('Error in getParticipationsForBackfill:', error);
+      res.status(500).json({ message: 'Internal server error' });
+  }
+};
+
+/**
+ * [INTERNAL] For backfilling. Gets all unique user IDs who participated in a specific match.
+ */
+exports.getUniqueParticipantsByMatch = async (req, res) => {
+  const { matchId } = req.params;
+
+  // Log 1: Confirm the function is hit and we have the correct matchId
+  console.log(`--- [getUniqueParticipantsByMatch] Looking for participants in match: ${matchId} ---`);
+
+  try {
+      const query = { matchId: matchId };
+
+      // Log 2: Show the exact query being sent to MongoDB
+      console.log('Executing DB query with:', query);
+
+      // This is the database query we need to inspect
+      const userIds = await ContestParticipation.find({ matchId: matchId });
+
+      // Log 3: Show exactly what the database returned
+      console.log(`Query found ${userIds.length} unique users.`);
+      console.log('User IDs found:', userIds);
+
+      res.status(200).json({ userIds });
+  } catch (error) {
+      console.error('Error in getUniqueParticipantsByMatch:', error);
+      res.status(500).json({ message: 'Internal server error' });
   }
 };
