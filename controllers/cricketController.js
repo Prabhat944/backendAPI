@@ -380,7 +380,6 @@ const enrichTeam = (team, matchPerformances, matchPlayerDetails) => {
 // };
 
 exports.getMyMatches = async (req, res) => {
-  console.group("tag i m here==========================================================>")
   try {
     const userId = req.user?._id;
     if (!userId) {
@@ -406,7 +405,7 @@ exports.getMyMatches = async (req, res) => {
       allSquads,
       allContestTemplates
     ] = await Promise.all([
-      ContestParticipation.find({ contestId: { $in: userContestIds } }).populate('user', 'name').lean(),
+      ContestParticipation.find({ contestId: { $in: userContestIds } }).populate('user', 'name profileImage').lean(),
       PlayerPerformance.find({ matchId: { $in: matchIds } }).lean(),
       upcomingMatchesList.find({ _id: { $in: matchIds } }).lean(),
       recentMatchList.find({ _id: { $in: matchIds } }).lean(),
