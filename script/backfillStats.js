@@ -3,7 +3,7 @@ const ContestParticipation = require('../models/ContestParticipation');
 const { calculateLifetimeStats, updateUserStatsInDB } = require('./jobs/statsEngine'); // We will create this file next
 
 // --- Your MongoDB Connection String ---
-const DB_URI = 'mongodb+srv://prabhatkumar944:Aot123456@adda11.yi6i6av.mongodb.net/fantsy11?retryWrites=true&w=majority&appName=adda11';
+const DB_URI = '';
 
 const runBackfill = async () => {
     console.log('Connecting to database...');
