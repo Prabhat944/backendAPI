@@ -12,6 +12,7 @@ require('./cron/creditWinnings');
 require('./cron/calculateMatchResultsCron')
 require('./cron/updateSeasonStatsCron');
 require('./cron/processOffersCron');
+require('./cron/updateUserStats');
 require('dotenv').config();
 const express = require('express');
 const connectDB = require('./config/db');

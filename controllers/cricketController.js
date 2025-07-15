@@ -109,6 +109,7 @@ const generatePrizeBreakdown = (contestTemplate) => {
   }
 };
 
+// Helper function to enrich a team with player details and calculate total points
 const enrichTeam = (team, matchPerformances, matchPlayerDetails) => {
   let totalPoints = 0;
   const enrichedPlayers = team.players.map(playerId => {
@@ -125,259 +126,6 @@ const enrichTeam = (team, matchPerformances, matchPlayerDetails) => {
   return { ...team, players: enrichedPlayers, totalPoints: parseFloat(totalPoints.toFixed(2)), teamName: team.teamName || '' };
 };
 
-
-// exports.getMyMatches = async (req, res) => {
-//   try {
-//     const userId = req.user?._id;
-//     if (!userId) {
-//         return res.status(401).json({ message: 'User not authenticated.' });
-//     }
-
-//     const participations = await ContestParticipation.find({ user: userId }).lean();
-//     if (!participations || participations.length === 0) {
-//       return res.json({ upcoming: [], live: [], completed: [], cancelled: [] });
-//     }
-
-//     const matchIds = [...new Set(participations.map(p => p.matchId?.toString().trim()).filter(Boolean))];
-//     const userContestIds = [...new Set(participations.map(p => p.contestId?.toString()).filter(Boolean))];
-
-//     const allContests = await Contest.find({ _id: { $in: userContestIds } }).lean();
-//     const templateIds = [...new Set(allContests.map(c => c.contestTemplateId?.toString()).filter(Boolean))];
-
-//     const [
-//       allParticipationsInContests,
-//       allPlayerPerformances,
-//       upcomingMatchDetails,
-//       recentMatchDetails,
-//       allSquads,
-//       allContestTemplates
-//     ] = await Promise.all([
-//       ContestParticipation.find({ contestId: { $in: userContestIds } }).populate('user', 'name').lean(),
-//       PlayerPerformance.find({ matchId: { $in: matchIds } }).lean(),
-//       upcomingMatchesList.find({ _id: { $in: matchIds } }).lean(),
-//       recentMatchList.find({ _id: { $in: matchIds } }).lean(),
-//       squadList.find({ _id: { $in: matchIds } }).lean(),
-//       ContestTemplate.find({ _id: { $in: templateIds } }).lean()
-//     ]);
-
-//     const allTeamIds = [...new Set(allParticipationsInContests.map(p => p.teamId?.toString()).filter(Boolean))];
-//     const allTeams = await Team.find({ _id: { $in: allTeamIds } }).lean();
-
-//     const teamsById = new Map(allTeams.map(t => [t._id.toString(), t]));
-//     const contestDetailsMap = new Map(allContests.map(c => [c._id.toString(), c]));
-//     const contestTemplatesMap = new Map(allContestTemplates.map(ct => [ct._id.toString(), ct]));
-    
-//     const performancesByMatch = allPlayerPerformances.reduce((acc, p) => {
-//         const mid = p.matchId?.toString();
-//         if(mid) { if (!acc[mid]) acc[mid] = {}; acc[mid][p.playerId.toString()] = p; }
-//         return acc;
-//     }, {});
-    
-//     const matchDetailsMap = new Map();
-//     upcomingMatchDetails.forEach(m => matchDetailsMap.set(m._id.toString(), m));
-//     recentMatchDetails.forEach(m => matchDetailsMap.set(m._id.toString(), m));
-    
-//     const playerDetailsMap = allSquads.reduce((acc, squadDoc) => {
-//         const matchId = squadDoc._id.toString();
-//         const innerPlayerMap = new Map(squadDoc.squad.flatMap(team => team.players).map(player => [player.id, player]));
-//         acc.set(matchId, innerPlayerMap);
-//         return acc;
-//     }, new Map());
-
-//     const categorizedMatches = { upcoming: [], live: [], completed: [], cancelled: [] };
-
-//     for (const mid of matchIds) {
-//       const matchDetails = matchDetailsMap.get(mid);
-//       if (!matchDetails) continue;
-      
-//       if (matchDetails.matchStarted && !matchDetails.matchEnded && matchDetails.teams && matchDetails.score && matchDetails.score.length < matchDetails.teams.length) {
-//         const teamsWithScores = matchDetails.score.map(s => s.inning.split(' Inning')[0].trim());
-//         const teamWithoutScore = matchDetails.teams.find(teamName => !teamsWithScores.includes(teamName));
-//         if (teamWithoutScore) {
-//             matchDetails.score.push({ r: 0, w: 0, o: 0, inning: `${teamWithoutScore} Inning 1` });
-//         }
-//       }
-
-//       const participantsForThisMatch = allParticipationsInContests.filter(p => p.matchId?.toString() === mid);
-
-//       // --- CRITICAL CHANGE START: allEnrichedTeams no longer carries rank/prizeWon ---
-//       // This array will be the source for general 'userTeams' and 'opponentTeams'
-//       // It includes base points, players, and match-level total points.
-//       let allEnrichedTeams = [];
-//       participantsForThisMatch.forEach(p => {
-//         const team = teamsById.get(p.teamId?.toString());
-//         if (team) {
-//           // Note: isWinner, prizeWon, rank are NOT added here.
-//           allEnrichedTeams.push({ ...enrichTeam(team, performancesByMatch[mid] || {}, playerDetailsMap.get(mid) || new Map()), user: p.user, contestId: p.contestId });
-//         }
-//       });
-
-//       // Populate userTeams and opponentTeams for the match overview (unique teams)
-//       // These will NOT have contest-specific rank/isWinner/prizeWon attached
-//       const userTeamsMapForOverview = new Map();
-//       allEnrichedTeams.filter(t => t.user?._id?.toString() === userId.toString()).forEach(team => {
-//           if (!userTeamsMapForOverview.has(team._id.toString())) {
-//               userTeamsMapForOverview.set(team._id.toString(), team);
-//           }
-//       });
-//       const userTeams = Array.from(userTeamsMapForOverview.values());
-      
-//       const opponentTeamsMapForOverview = new Map();
-//       allEnrichedTeams.filter(t => t.user?._id?.toString() !== userId.toString()).forEach(team => {
-//           if (!opponentTeamsMapForOverview.has(team._id.toString())) {
-//               opponentTeamsMapForOverview.set(team._id.toString(), team);
-//           }
-//       });
-//       const opponentTeams = Array.from(opponentTeamsMapForOverview.values());
-//       // --- CRITICAL CHANGE END ---
-
-
-//       // --- Calculate Ranks (this part remains largely the same, but for all teams) ---
-//       const finalRanksByContest = new Map(); // Maps contestId -> (Map: teamId -> rank)
-//       if (matchDetails.matchStarted) {
-//         const contestIdsInMatch = [...new Set(participantsForThisMatch.map(p => p.contestId.toString()))];
-//         for (const contestId of contestIdsInMatch) {
-//           // Use allEnrichedTeams for sorting as it has totalPoints
-//           const contestParticipants = allEnrichedTeams.filter(team => team.contestId.toString() === contestId);
-//           contestParticipants.sort((a, b) => b.totalPoints - a.totalPoints);
-          
-//           const teamRankMap = new Map(); // Map to store teamId to rank for this specific contest
-//           let currentRank = 1;
-//           for (let i = 0; i < contestParticipants.length; i++) {
-//             if (i > 0 && contestParticipants[i].totalPoints < contestParticipants[i - 1].totalPoints) {
-//               currentRank = i + 1;
-//             }
-//             teamRankMap.set(contestParticipants[i]._id.toString(), currentRank);
-//           }
-//           finalRanksByContest.set(contestId, teamRankMap);
-//         }
-//       }
-      
-//       // --- Create allFullyEnrichedTeams (now with contest-specific rank/isWinner/prizeWon) ---
-//       // This array will be the source for contest-specific leaderboards.
-//       const allFullyEnrichedTeams = allEnrichedTeams.map(team => {
-//         const contest = contestDetailsMap.get(team.contestId.toString());
-//         const contestTemplate = contest ? contestTemplatesMap.get(contest.contestTemplateId.toString()) : null;
-//         const prizeBreakdown = generatePrizeBreakdown(contestTemplate);
-
-//         let teamRank = finalRanksByContest.get(team.contestId.toString())?.get(team._id.toString()) || team.rank || null;
-//         let isWinner = false;
-//         let prizeWon = 0;
-
-//         if (matchDetails.matchEnded && teamRank !== null) {
-//             // Find other teams in the SAME contest with the SAME rank for tie-breaking prize logic
-//             const tiedPlayers = allEnrichedTeams.filter( // Use allEnrichedTeams here to get all participants for tie check
-//                 t => t.contestId.toString() === team.contestId.toString() &&
-//                      (finalRanksByContest.get(t.contestId.toString())?.get(t._id.toString()) === teamRank)
-//             );
-//             const tieCount = tiedPlayers.length;
-
-//             if (tieCount > 1) {
-//                 const occupiedRanks = Array.from({ length: tieCount }, (_, i) => teamRank + i);
-//                 const totalTiedPrize = prizeBreakdown.filter(b => occupiedRanks.includes(b.rank)).reduce((sum, b) => sum + b.prize, 0);
-//                 prizeWon = parseFloat((totalTiedPrize / tieCount).toFixed(2));
-//             } else {
-//                 const winningRank = prizeBreakdown.find(b => b.rank === teamRank);
-//                 if (winningRank) prizeWon = winningRank.prize;
-//             }
-//             isWinner = prizeWon > 0;
-//         }
-
-//         return { ...team, rank: teamRank, isWinner, prizeWon }; // Add calculated rank and prize
-//       });
-
-
-//       // --- NEW: Populate contestLeaderboards for drill-down view ---
-//       const contestLeaderboards = new Map(); // Map: contestId -> Array of ALL teams (user's and opponents') for that contest
-//       const contestIdsInMatch = [...new Set(participantsForThisMatch.map(p => p.contestId.toString()))];
-//       for (const contestId of contestIdsInMatch) {
-//           const teamsForThisContest = allFullyEnrichedTeams
-//               .filter(team => team.contestId.toString() === contestId)
-//               .sort((a, b) => a.rank - b.rank); // Sort by rank for display
-//           contestLeaderboards.set(contestId, teamsForThisContest);
-//       }
-//       // --- END NEW ---
-
-
-//       // `userContestDetails` remains the primary source for the user's specific contest entries
-//       // It is already correctly picking up the `isWinner`, `prizeWon`, and `rank` from `allFullyEnrichedTeams`
-//       const userContestDetails = participantsForThisMatch
-//         .filter(p => p.user?._id?.toString() === userId.toString())
-//         .map(p => {
-//           const contest = contestDetailsMap.get(p.contestId.toString());
-//           if (contest?.status === 'cancelled') {
-//             return {
-//               _id: p._id,
-//               contestId: p.contestId,
-//               status: 'cancelled',
-//               teamName: teamsById.get(p.teamId?.toString())?.teamName || '',
-//               entryFee: contest?.entryFee || 0
-//             };
-//           }
-
-//           const enrichedTeamDataForThisContest = allFullyEnrichedTeams.find(
-//             t => t._id.toString() === p.teamId.toString() && t.contestId.toString() === p.contestId.toString()
-//           );
-
-//           const contestTemplate = contest ? contestTemplatesMap.get(contest.contestTemplateId.toString()) : null;
-
-//           return {
-//             ...p, // Original participation data
-//             // Override with calculated/enriched data relevant to this specific contest participation
-//             totalPoints: enrichedTeamDataForThisContest?.totalPoints || p.totalPoints,
-//             rank: enrichedTeamDataForThisContest?.rank || p.rank,
-//             isWinner: enrichedTeamDataForThisContest?.isWinner || false,
-//             prizeWon: enrichedTeamDataForThisContest?.prizeWon || 0,
-            
-//             // Contest-specific details
-//             contestPrize: contestTemplate?.prize || 0,
-//             contestType: contestTemplate?.type || '',
-//             entryFee: contestTemplate?.entryFee || 0,
-//             totalSpots: contestTemplate?.totalSpots || 0,
-//             prizeBreakdown: generatePrizeBreakdown(contestTemplate),
-//             teamName: teamsById.get(p.teamId?.toString())?.teamName || ''
-//           };
-//         });
-
-//       if (userContestDetails.length === 0) continue;
-
-//       const matchMeta = {
-//         ...matchDetails,
-//         userTeamsCount: userTeams.length, // Count of unique user teams for the match
-//         userContestDetails,
-//         userTeams,        // Unique user teams for this match (no contest-specific rank/prize)
-//         opponentTeams,    // Unique opponent teams for this match (no contest-specific rank/prize)
-//         contestLeaderboards: Object.fromEntries(contestLeaderboards), // Full leaderboard per contestId
-//         displayTimeIST: formatInTimeZone(new Date(matchDetails.dateTimeGMT), 'Asia/Kolkata', 'h:mm a'),
-//         countdown: getCountdown(new Date(matchDetails.dateTimeGMT)),
-//       };
-      
-//       const allUserContestsAreCancelled = userContestDetails.every(c => c.status === 'cancelled');
-
-//       if (allUserContestsAreCancelled) {
-//         categorizedMatches.cancelled.push(matchMeta);
-//       } else if (matchDetails.matchEnded) {
-//         categorizedMatches.completed.push(matchMeta);
-//       } else if (matchDetails.matchStarted) {
-//         categorizedMatches.live.push(matchMeta);
-//       } else {
-//         categorizedMatches.upcoming.push(matchMeta);
-//       }
-//       console.log(`[getMyMatches] matchId: ${mid} → userContestDetails (status/winner/prize):`, userContestDetails.map(c => ({ status: c.status, isWinner: c.isWinner, prizeWon: c.prizeWon, rank: c.rank })));
-      
-//     }
-
-//     categorizedMatches.upcoming.sort((a, b) => new Date(a.dateTimeGMT) - new Date(b.dateTimeGMT));
-//     categorizedMatches.live.sort((a, b) => new Date(a.dateTimeGMT) - new Date(b.dateTimeGMT));
-//     categorizedMatches.completed.sort((a, b) => new Date(b.dateTimeGMT) - new Date(a.dateTimeGMT));
-//     categorizedMatches.cancelled.sort((a, b) => new Date(b.dateTimeGMT) - new Date(a.dateTimeGMT));
-// // console.log('check the match resposne', res.json(categorizedMatches));
-//     return res.json(categorizedMatches);
-//   } catch (error) {
-//     console.error('[getMyMatches] Error:', error.message, error.stack);
-//     return res.status(500).json({ message: 'Failed to fetch user matches', error: error.message });
-//   }
-// };
 
 exports.getMyMatches = async (req, res) => {
   try {
@@ -443,158 +191,174 @@ exports.getMyMatches = async (req, res) => {
       const matchDetails = matchDetailsMap.get(mid);
       if (!matchDetails) continue;
       
-      if (matchDetails.matchStarted && !matchDetails.matchEnded && matchDetails.teams && matchDetails.score && matchDetails.score.length < matchDetails.teams.length) {
-        const teamsWithScores = matchDetails.score.map(s => s.inning.split(' Inning')[0].trim());
-        const teamWithoutScore = matchDetails.teams.find(teamName => !teamsWithScores.includes(teamName));
-        if (teamWithoutScore) {
-            matchDetails.score.push({ r: 0, w: 0, o: 0, inning: `${teamWithoutScore} Inning 1` });
-        }
-      }
-
       const participantsForThisMatch = allParticipationsInContests.filter(p => p.matchId?.toString() === mid);
+      if (participantsForThisMatch.length === 0) continue;
 
-      let allEnrichedTeams = [];
+      let allEnrichedTeamsRaw = [];
       participantsForThisMatch.forEach(p => {
         const team = teamsById.get(p.teamId?.toString());
         if (team) {
-          allEnrichedTeams.push({ 
+          allEnrichedTeamsRaw.push({ 
             ...enrichTeam(team, performancesByMatch[mid] || {}, playerDetailsMap.get(mid) || new Map()), 
             user: p.user, 
-            contestId: p.contestId 
+            contestId: p.contestId,
+            contestTeam: p.contestTeam
           });
         }
       });
-
-      const userContestIdsForMatch = [...new Set(
-        participantsForThisMatch
-          .filter(p => p.user?._id?.toString() === userId.toString())
-          .map(p => p.contestId.toString())
-      )];
-
-      const userTeamsMapForOverview = new Map();
-      allEnrichedTeams
-        .filter(t => t.user?._id?.toString() === userId.toString())
-        .forEach(team => {
-          if (!userTeamsMapForOverview.has(team._id.toString())) {
-              userTeamsMapForOverview.set(team._id.toString(), team);
-          }
-      });
-      const userTeams = Array.from(userTeamsMapForOverview.values());
       
-      const opponentTeamsMapForOverview = new Map();
-      allEnrichedTeams
-        .filter(t => 
-          t.user?._id?.toString() !== userId.toString() && 
-          userContestIdsForMatch.includes(t.contestId.toString())
-        )
-        .forEach(team => {
-          if (!opponentTeamsMapForOverview.has(team._id.toString())) {
-              opponentTeamsMapForOverview.set(team._id.toString(), team);
-          }
-      });
-      const opponentTeams = Array.from(opponentTeamsMapForOverview.values());
-
       const finalRanksByContest = new Map();
       if (matchDetails.matchStarted) {
         const contestIdsInMatch = [...new Set(participantsForThisMatch.map(p => p.contestId.toString()))];
         for (const contestId of contestIdsInMatch) {
-          const contestParticipants = allEnrichedTeams.filter(team => team.contestId.toString() === contestId);
-          contestParticipants.sort((a, b) => b.totalPoints - a.totalPoints);
-          
-          const teamRankMap = new Map();
-          let currentRank = 1;
-          for (let i = 0; i < contestParticipants.length; i++) {
-            if (i > 0 && contestParticipants[i].totalPoints < contestParticipants[i - 1].totalPoints) {
-              currentRank = i + 1;
-            }
-            teamRankMap.set(contestParticipants[i]._id.toString(), currentRank);
+          const contest = contestDetailsMap.get(contestId);
+          const contestTemplate = contest ? contestTemplatesMap.get(contest.contestTemplateId.toString()) : null;
+          const contestParticipants = allEnrichedTeamsRaw.filter(team => team.contestId.toString() === contestId);
+
+          if (contestTemplate?.type === 'TEAM_CONTEST') {
+              const teamScores = contestParticipants.reduce((acc, team) => {
+                  if (!acc[team.contestTeam]) acc[team.contestTeam] = 0;
+                  acc[team.contestTeam] += team.totalPoints;
+                  return acc;
+              }, {});
+              const sortedTeams = Object.entries(teamScores).sort(([, scoreA], [, scoreB]) => scoreB - scoreA);
+              const teamRankings = new Map();
+              sortedTeams.forEach(([teamName], index) => teamRankings.set(teamName, index + 1));
+              const teamRankMap = new Map();
+              contestParticipants.forEach(team => {
+                  teamRankMap.set(team._id.toString(), teamRankings.get(team.contestTeam));
+              });
+              finalRanksByContest.set(contestId, teamRankMap);
+          } else {
+              contestParticipants.sort((a, b) => b.totalPoints - a.totalPoints);
+              const teamRankMap = new Map();
+              let currentRank = 1;
+              for (let i = 0; i < contestParticipants.length; i++) {
+                if (i > 0 && contestParticipants[i].totalPoints < contestParticipants[i - 1].totalPoints) {
+                  currentRank = i + 1;
+                }
+                teamRankMap.set(contestParticipants[i]._id.toString(), currentRank);
+              }
+              finalRanksByContest.set(contestId, teamRankMap);
           }
-          finalRanksByContest.set(contestId, teamRankMap);
         }
       }
+
+      const allFullyEnrichedTeams = allEnrichedTeamsRaw.map(team => {
+          const contestId = team.contestId.toString();
+          const rank = finalRanksByContest.get(contestId)?.get(team._id.toString()) || null;
+          let prizeWon = 0;
+
+          if (matchDetails.matchEnded && rank !== null) {
+              const contest = contestDetailsMap.get(contestId);
+              const contestTemplate = contest ? contestTemplatesMap.get(contest.contestTemplateId.toString()) : null;
+              const prizeBreakdown = generatePrizeBreakdown(contestTemplate);
+
+              const teamsAtSameRank = allEnrichedTeamsRaw.filter(
+                  t => t.contestId.toString() === contestId &&
+                       (finalRanksByContest.get(contestId)?.get(t._id.toString()) === rank)
+              );
+              const tieCount = teamsAtSameRank.length;
+
+              if (tieCount > 0) {
+                  const occupiedRanks = Array.from({ length: tieCount }, (_, i) => rank + i);
+                  const totalTiedPrize = prizeBreakdown
+                      .filter(b => occupiedRanks.includes(b.rank))
+                      .reduce((sum, b) => sum + b.prize, 0);
+                  
+                  prizeWon = parseFloat((totalTiedPrize / tieCount).toFixed(2));
+              }
+          }
+          return { ...team, rank, prizeWon, isWinner: prizeWon > 0 };
+      });
       
-      const allFullyEnrichedTeams = allEnrichedTeams.map(team => {
-        const contest = contestDetailsMap.get(team.contestId.toString());
+      const userContestDetailsGrouped = new Map();
+      const userParticipationsForMatch = participantsForThisMatch.filter(
+        p => p.user?._id?.toString() === userId.toString()
+      );
+
+      for (const p of userParticipationsForMatch) {
+        const contest = contestDetailsMap.get(p.contestId.toString());
         const contestTemplate = contest ? contestTemplatesMap.get(contest.contestTemplateId.toString()) : null;
-        const prizeBreakdown = generatePrizeBreakdown(contestTemplate);
-
-        let teamRank = finalRanksByContest.get(team.contestId.toString())?.get(team._id.toString()) || team.rank || null;
-        let isWinner = false;
-        let prizeWon = 0;
-
-        if (matchDetails.matchEnded && teamRank !== null) {
-            const tiedPlayers = allEnrichedTeams.filter(
-                t => t.contestId.toString() === team.contestId.toString() &&
-                     (finalRanksByContest.get(t.contestId.toString())?.get(t._id.toString()) === teamRank)
-            );
-            const tieCount = tiedPlayers.length;
-
-            if (tieCount > 1) {
-                const occupiedRanks = Array.from({ length: tieCount }, (_, i) => teamRank + i);
-                const totalTiedPrize = prizeBreakdown.filter(b => occupiedRanks.includes(b.rank)).reduce((sum, b) => sum + b.prize, 0);
-                prizeWon = parseFloat((totalTiedPrize / tieCount).toFixed(2));
-            } else {
-                const winningRank = prizeBreakdown.find(b => b.rank === teamRank);
-                if (winningRank) prizeWon = winningRank.prize;
-            }
-            isWinner = prizeWon > 0;
+        
+        if (contest?.status === 'cancelled') {
+            userContestDetailsGrouped.set(p._id.toString(), {
+                _id: p._id,
+                contestId: p.contestId,
+                status: 'cancelled',
+                teamName: teamsById.get(p.teamId.toString())?.teamName || '',
+                entryFee: contest?.entryFee || 0
+            });
+            continue;
         }
 
-        return { ...team, rank: teamRank, isWinner, prizeWon };
+        const enrichedTeamData = allFullyEnrichedTeams.find(
+            t => t._id.toString() === p.teamId.toString() && t.contestId.toString() === p.contestId.toString()
+        );
+
+        const contestIdStr = p.contestId.toString();
+
+        if (contestTemplate?.type === 'TEAM_CONTEST') {
+            if (userContestDetailsGrouped.has(contestIdStr)) {
+                const existing = userContestDetailsGrouped.get(contestIdStr);
+                existing.prizeWon += enrichedTeamData?.prizeWon || 0;
+                existing.entryFee += contestTemplate?.entryFee || 0;
+                if(enrichedTeamData) existing.userTeamNames.push(enrichedTeamData.teamName);
+            } else {
+                userContestDetailsGrouped.set(contestIdStr, {
+                    ...p,
+                    rank: enrichedTeamData?.rank,
+                    prizeWon: enrichedTeamData?.prizeWon || 0,
+                    contestPrize: contestTemplate?.prize || 0,
+                    contestType: contestTemplate?.type,
+                    entryFee: contestTemplate?.entryFee || 0,
+                    totalSpots: contestTemplate?.totalSpots || 0,
+                    prizeBreakdown: generatePrizeBreakdown(contestTemplate),
+                    teamName: `Team ${p.contestTeam}`,
+                    userTeamNames: enrichedTeamData ? [enrichedTeamData.teamName] : [],
+                });
+            }
+        } else {
+            userContestDetailsGrouped.set(p._id.toString(), {
+                ...p,
+                rank: enrichedTeamData?.rank,
+                prizeWon: enrichedTeamData?.prizeWon || 0,
+                contestPrize: contestTemplate?.prize || 0,
+                contestType: contestTemplate?.type,
+                entryFee: contestTemplate?.entryFee || 0,
+                totalSpots: contestTemplate?.totalSpots || 0,
+                prizeBreakdown: generatePrizeBreakdown(contestTemplate),
+                teamName: enrichedTeamData?.teamName || '',
+            });
+        }
+      }
+
+      userContestDetailsGrouped.forEach(entry => {
+          entry.isWinner = entry.prizeWon > 0;
       });
 
+      const userContestDetails = Array.from(userContestDetailsGrouped.values());
+      
+      if (userContestDetails.length === 0) continue;
+
+      const userTeamsForMatch = allFullyEnrichedTeams.filter(t => t.user?._id?.toString() === userId.toString());
+      const opponentTeamsForMatch = allFullyEnrichedTeams.filter(t => t.user?._id?.toString() !== userId.toString());
+
       const contestLeaderboards = new Map();
-      const contestIdsInMatch = [...new Set(participantsForThisMatch.map(p => p.contestId.toString()))];
-      for (const contestId of contestIdsInMatch) {
+      const contestIdsInMatchForLeaderboard = [...new Set(participantsForThisMatch.map(p => p.contestId.toString()))];
+      for (const contestId of contestIdsInMatchForLeaderboard) {
           const teamsForThisContest = allFullyEnrichedTeams
               .filter(team => team.contestId.toString() === contestId)
-              .sort((a, b) => a.rank - b.rank);
+              .sort((a, b) => (a.rank || Infinity) - (b.rank || Infinity));
           contestLeaderboards.set(contestId, teamsForThisContest);
       }
 
-      const userContestDetails = participantsForThisMatch
-        .filter(p => p.user?._id?.toString() === userId.toString())
-        .map(p => {
-          const contest = contestDetailsMap.get(p.contestId.toString());
-          if (contest?.status === 'cancelled') {
-            return {
-              _id: p._id,
-              contestId: p.contestId,
-              status: 'cancelled',
-              teamName: teamsById.get(p.teamId?.toString())?.teamName || '',
-              entryFee: contest?.entryFee || 0
-            };
-          }
-
-          const enrichedTeamDataForThisContest = allFullyEnrichedTeams.find(
-            t => t._id.toString() === p.teamId.toString() && t.contestId.toString() === p.contestId.toString()
-          );
-
-          const contestTemplate = contest ? contestTemplatesMap.get(contest.contestTemplateId.toString()) : null;
-
-          return {
-            ...p,
-            totalPoints: enrichedTeamDataForThisContest?.totalPoints || p.totalPoints,
-            rank: enrichedTeamDataForThisContest?.rank || p.rank,
-            isWinner: enrichedTeamDataForThisContest?.isWinner || false,
-            prizeWon: enrichedTeamDataForThisContest?.prizeWon || 0,
-            contestPrize: contestTemplate?.prize || 0,
-            contestType: contestTemplate?.type || '',
-            entryFee: contestTemplate?.entryFee || 0,
-            totalSpots: contestTemplate?.totalSpots || 0,
-            prizeBreakdown: generatePrizeBreakdown(contestTemplate),
-            teamName: teamsById.get(p.teamId?.toString())?.teamName || ''
-          };
-        });
-
-      if (userContestDetails.length === 0) continue;
-
       const matchMeta = {
         ...matchDetails,
-        userTeamsCount: userTeams.length,
+        userTeamsCount: userTeamsForMatch.length,
         userContestDetails,
-        userTeams,
-        opponentTeams,
+        userTeams: userTeamsForMatch,
+        opponentTeams: opponentTeamsForMatch,
         contestLeaderboards: Object.fromEntries(contestLeaderboards),
         displayTimeIST: formatInTimeZone(new Date(matchDetails.dateTimeGMT), 'Asia/Kolkata', 'h:mm a'),
         countdown: getCountdown(new Date(matchDetails.dateTimeGMT)),

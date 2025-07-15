@@ -117,6 +117,11 @@ const contestParticipationSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'WalletTransaction'
     },
+    statsProcessed: {
+      type: Boolean,
+      default: false,
+      index: true // Add an index for faster database lookups
+  },
   },
   // --- Argument 2: A separate object for all options ---
   {
