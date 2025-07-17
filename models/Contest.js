@@ -46,6 +46,10 @@ const contestSchema = new mongoose.Schema({
     default: 'upcoming',
     index: true,
   },
+  chatDeleted: {
+    type: Boolean,
+    default: false
+},
   signupBonusAllowedPercentage: {
     type: Number,
     default: 0,

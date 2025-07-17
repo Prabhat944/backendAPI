@@ -3,6 +3,7 @@ const router = express.Router();
 const authController = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
 const contestController = require('../controllers/contestController');
+const internalAuth = require('../middleware/internalAuth'); 
 const User = require('../models/userModel')
 
 
@@ -45,4 +46,7 @@ router.get(
     authMiddleware.protectInternal, // Secure this endpoint
     contestController.getUniqueParticipantsByMatch
 );
+router.get('/internal/for-chat-cleanup', internalAuth, contestController.getContestsForChatCleanup);
+router.patch('/internal/mark-chat-deleted', internalAuth, contestController.markContestsChatDeleted);
+router.post('/internal/by-ids', internalAuth, contestController.getContestsByIds);
 module.exports = router;

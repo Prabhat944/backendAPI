@@ -212,3 +212,23 @@ exports.cloneTeam = async (req, res) => {
     return res.status(400).json({ message: err.message });
   }
 };
+exports.getTeamsByIds = async (req, res) => {
+  try {
+      const { teamIds } = req.body;
+
+      if (!Array.isArray(teamIds) || teamIds.length === 0) {
+          return res.status(400).json({ message: 'teamIds must be a non-empty array.' });
+      }
+
+      // Assuming your team model is named 'Team'
+      const teams = await Team.find({ '_id': { $in: teamIds } }).lean();
+      
+      // You might want to populate player details here as well if needed
+      // For example: .populate('players.playerId', 'name role teamName');
+
+      res.json(teams);
+  } catch (error) {
+      console.error('Error fetching teams by IDs:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+  }
+};

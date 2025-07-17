@@ -869,3 +869,58 @@ exports.getUniqueParticipantsByMatch = async (req, res) => {
       res.status(500).json({ message: 'Internal server error' });
   }
 };
+
+exports.getContestsForChatCleanup = async (req, res) => {
+  try {
+      const contests = await Contest.find({
+          status: 'completed',
+          chatDeleted: { $ne: true }
+      }).select('_id').lean(); // .lean() for performance
+
+      res.json(contests);
+  } catch (error) {
+      console.error('Error fetching contests for chat cleanup:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
+exports.markContestsChatDeleted = async (req, res) => {
+  try {
+      const { contestIds } = req.body;
+
+      if (!Array.isArray(contestIds) || contestIds.length === 0) {
+          return res.status(400).json({ message: 'contestIds must be a non-empty array.' });
+      }
+
+      const result = await Contest.updateMany(
+          { _id: { $in: contestIds } },
+          { $set: { chatDeleted: true } }
+      );
+
+      res.json({
+          message: 'Contests successfully marked as chat-deleted.',
+          modifiedCount: result.nModified,
+      });
+
+  } catch (error) {
+      console.error('Error marking contests as chat-deleted:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
+exports.getContestsByIds = async (req, res) => {
+  try {
+      const { contestIds } = req.body;
+
+      if (!Array.isArray(contestIds) || contestIds.length === 0) {
+          return res.status(400).json({ message: 'contestIds must be a non-empty array.' });
+      }
+
+      const contests = await Contest.find({ '_id': { $in: contestIds } }).lean();
+
+      res.json(contests);
+  } catch (error) {
+      console.error('Error fetching contests by IDs:', error);
+      res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
