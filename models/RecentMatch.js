@@ -34,6 +34,10 @@ const recentMatchSchema = new mongoose.Schema({
         type: Boolean,
         default: false
     },
+    leaderboardGenerated: {
+        type: Boolean,
+        default: false,
+    },
     // ✅ NEW KEY ADDED HERE:
     contestCancellationCompleted: {
         type: Boolean,

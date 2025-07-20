@@ -13,6 +13,7 @@ require('./cron/calculateMatchResultsCron')
 require('./cron/updateSeasonStatsCron');
 require('./cron/processOffersCron');
 require('./cron/updateUserStats');
+require('./cron/generateLeaderboardCron');
 require('dotenv').config();
 const express = require('express');
 const connectDB = require('./config/db');
@@ -32,6 +33,7 @@ const supportEmailRoute = require('./route/supportEmailRoute');
 const kycRoutes = require('./route/kycRoutes'); // Import new routes
 const playerPointRoutes = require('./route/playerStatsRoute')
 const offerRoutes = require('./route/offerRoute'); // Import offer routes
+const leaderboardRoutes = require('./route/leaderboardRoutes');
 // const seriesRoutes = require('./route/seriesRoutes');
 const cors = require('cors')
 require('./config/cloudinary');
@@ -66,6 +68,7 @@ app.use('/api/v1/supportEmail', supportEmailRoute)
 app.use('/api/v1/kyc', kycRoutes); // Use the new KYC routes
 app.use('/api/v1/playerStats', playerPointRoutes);
 app.use('/api/v1/offer', offerRoutes); // Use the offer routes
+app.use('/api/v1/leaderboards', leaderboardRoutes);
 // app.use('/api/v1/series', seriesRoutes);
   
 app.get('/', (req, res) => {
