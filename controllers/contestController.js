@@ -26,8 +26,7 @@ if (!WALLET_SERVICE_URL) {
 
 //   try {
 //     const [contest, team, isMatchUpcoming] = await Promise.all([
-//         // Populate contestTemplateId to get entryFee, maxTeamsPerUser, and signupBonusAllowedPercentage
-//         Contest.findById(contestId).populate('contestTemplateId', 'entryFee maxTeamsPerUser signupBonusAllowedPercentage'),
+//         Contest.findById(contestId).populate('contestTemplateId', 'entryFee maxTeamsPerUser signupBonusAllowedPercentage title'),
 //         Team.findOne({ _id: teamId, user: userId, matchId }),
 //         Match.exists({ _id: matchId, dateTimeGMT: { $gt: new Date() } })
 //     ]);
@@ -40,18 +39,13 @@ if (!WALLET_SERVICE_URL) {
 //     if (contest.filledSpots >= contest.totalSpots) {
 //       return res.status(400).json({ message: 'Contest is full' });
 //     }
-
-//     if (!contest.contestTemplateId || typeof contest.contestTemplateId.entryFee === 'undefined') {
-//       console.error(`Contest ${contestId} or its template is missing entryFee.`);
-//       return res.status(500).json({ message: 'Contest entry fee not defined.' });
+//     if (!contest.contestTemplateId) {
+//       return res.status(500).json({ message: 'Contest configuration is missing.' });
 //     }
 
-//     const entryFee = contest.contestTemplateId.entryFee;
-//     // Get the exact signup bonus percentage from the contest template
-//     const signupBonusAllowedPercentageForContest = contest.contestTemplateId.signupBonusAllowedPercentage || 0;
+//     const { entryFee, maxTeamsPerUser, signupBonusAllowedPercentage, title: contestTitle } = contest.contestTemplateId;
 
-
-//     const entryLimit = contest.contestTemplateId.maxTeamsPerUser || 1;
+//     const entryLimit = maxTeamsPerUser || 1;
 //     const existingParticipations = await ContestParticipation.find({ user: userId, contestId }).lean();
 
 //     if (existingParticipations.length >= entryLimit) {
@@ -65,48 +59,73 @@ if (!WALLET_SERVICE_URL) {
 
 //     // --- Wallet Deduction ---
 //     let deductionDetails;
+//     let transactionId;
 //     try {
 //       const walletDeductionResponse = await axios.post(`${WALLET_SERVICE_URL}/api/wallet/deduct`, {
-//         userId: userId,
+//         userId,
 //         amount: entryFee,
-//         reason: `Contest Entry: ${contest.title} (${contestId})`,
-//         signupBonusPercentage: signupBonusAllowedPercentageForContest // <-- PASS THE PERCENTAGE
+//         reason: `Contest Entry: ${contestTitle} (${contestId})`,
+//         signupBonusPercentage: signupBonusAllowedPercentage
 //       }, {
-//         headers: { 'Authorization': req.headers.authorization } // Assuming your wallet service requires this token
+//         headers: { 'Authorization': req.headers.authorization }
 //       });
-
-//       if (walletDeductionResponse.status !== 200) {
-//         console.error('Wallet deduction failed with non-200 status:', walletDeductionResponse.data);
-//         return res.status(500).json({ message: 'Failed to deduct funds from wallet.' });
-//       }
-
-//       console.log('Funds successfully deducted:', walletDeductionResponse.data.message);
 //       deductionDetails = walletDeductionResponse.data.deductionBreakdown; 
-
+//       transactionId = walletDeductionResponse.data.transactionId;
 //     } catch (walletError) {
-//       if (walletError.response && walletError.response.data && walletError.response.data.message) {
-//         console.error('Wallet service error:', walletError.response.data.message);
-//         return res.status(walletError.response.status).json({ message: walletError.response.data.message });
-//       } else {
-//         console.error('Error connecting to Wallet Service or unexpected error:', walletError.message);
-//         return res.status(500).json({ message: 'Error processing wallet transaction. Please try again.' });
-//       }
+//       const status = walletError.response?.status || 500;
+//       const message = walletError.response?.data?.message || 'Error processing wallet transaction.';
+//       return res.status(status).json({ message });
 //     }
 //     // --- END Wallet Deduction ---
 
-//     contest.participants.push(userId);
-//     contest.filledSpots += 1;
-//     await contest.save();
+//     try {
+//         const participation = await ContestParticipation.create({
+//             user: userId,
+//             matchId,
+//             contestId,
+//             teamId,
+//             deductionBreakdown: deductionDetails,
+//             transactionId
+//         });
 
-//     const participation = await ContestParticipation.create({
-//       user: userId,
-//       matchId,
-//       contestId,
-//       teamId,
-//       deductionBreakdown: deductionDetails // Ensure this field exists in ContestParticipation schema
-//     });
+//         // ✅ ATOMIC UPDATE: Safely increment the filledSpots count.
+//         await Contest.findByIdAndUpdate(contestId, { $inc: { filledSpots: 1 } });
 
-//     return res.status(201).json({ message: 'Successfully joined contest', participation });
+//         // ✅ Notify the Offer Service (This will not crash the main function if it fails)
+//         try {
+//           console.log("tag here======>",{ userId, matchId, contestId });
+//             await axios.post(`${OFFER_SERVICE_URL}/api/offerRoutes/track-progress`, {
+//                 userId: userId,
+//                 matchId: matchId,
+//                 contestId: contestId
+//             },
+//             {
+//               headers: { 'Authorization': `Bearer ${INTERNAL_API_TOKEN}` } // Added auth header
+//             });
+
+//         } catch (offerError) {
+//             console.error(`[Non-blocking error] Failed to track offer progress for user ${userId} in match ${matchId}:`, offerError.message);
+//         }
+
+//         return res.status(201).json({ message: 'Successfully joined contest', participation });
+
+//     } catch(dbError) {
+//         // --- Refund Logic ---
+//         console.error('CRITICAL: DB save failed after wallet deduction. Initiating refund.', dbError);
+//         try {
+//             await axios.post(`${WALLET_SERVICE_URL}/api/wallet/refund`, {
+//                 transactionId: transactionId,
+//                 reason: `Automatic refund: Failed to join contest ${contestId}`
+//             }, { headers: { 'Authorization': req.headers.authorization }});
+//         } catch (refundError) {
+//             console.error(`CRITICAL FAILURE: Automatic refund for transaction ${transactionId} FAILED.`, refundError.message);
+//         }
+
+//         if (dbError.code === 11000) {
+//             return res.status(400).json({ message: 'You have already joined with this specific team. Your entry fee has been refunded.' });
+//         }
+//         return res.status(500).json({ message: 'Could not join contest due to a database error. Your entry fee has been refunded.' });
+//     }
 
 //   } catch (err) {
 //     console.error('Error in joinContest:', err);
@@ -124,107 +143,87 @@ exports.joinContest = async (req, res) => {
 
   try {
     const [contest, team, isMatchUpcoming] = await Promise.all([
-        Contest.findById(contestId).populate('contestTemplateId', 'entryFee maxTeamsPerUser signupBonusAllowedPercentage title'),
+        Contest.findById(contestId).populate('contestTemplateId', 'entryFee maxTeamsPerUser signupBonusAllowedPercentage title totalSpots'),
         Team.findOne({ _id: teamId, user: userId, matchId }),
         Match.exists({ _id: matchId, dateTimeGMT: { $gt: new Date() } })
     ]);
 
-    if (!isMatchUpcoming) {
-      return res.status(400).json({ message: 'This match has already started.' });
-    }
+    // Initial checks
+    if (!isMatchUpcoming) return res.status(400).json({ message: 'This match has already started.' });
     if (!contest) return res.status(404).json({ message: 'Contest not found' });
     if (!team) return res.status(400).json({ message: 'Invalid team for this match' });
-    if (contest.filledSpots >= contest.totalSpots) {
-      return res.status(400).json({ message: 'Contest is full' });
-    }
-    if (!contest.contestTemplateId) {
-      return res.status(500).json({ message: 'Contest configuration is missing.' });
-    }
+    if (!contest.contestTemplateId) return res.status(500).json({ message: 'Contest configuration is missing.' });
 
-    const { entryFee, maxTeamsPerUser, signupBonusAllowedPercentage, title: contestTitle } = contest.contestTemplateId;
+    // ✅ These variables ARE used below.
+    const { entryFee, maxTeamsPerUser, signupBonusAllowedPercentage, title: contestTitle, totalSpots } = contest.contestTemplateId;
 
-    const entryLimit = maxTeamsPerUser || 1;
     const existingParticipations = await ContestParticipation.find({ user: userId, contestId }).lean();
-
-    if (existingParticipations.length >= entryLimit) {
-      return res.status(400).json({ message: `You have reached the entry limit of ${entryLimit} for this contest.` });
+    if (existingParticipations.length >= (maxTeamsPerUser || 1)) {
+        return res.status(400).json({ message: `You have reached the entry limit for this contest.` });
     }
-
-    const isTeamAlreadyEntered = existingParticipations.some(p => p.teamId.toString() === teamId.toString());
-    if (isTeamAlreadyEntered) {
-      return res.status(400).json({ message: 'You have already joined this contest with this specific team.' });
+    if (existingParticipations.some(p => p.teamId.toString() === teamId.toString())) {
+        return res.status(400).json({ message: 'You have already joined this contest with this specific team.' });
     }
 
     // --- Wallet Deduction ---
-    let deductionDetails;
-    let transactionId;
+    let deductionDetails, transactionId;
     try {
-      const walletDeductionResponse = await axios.post(`${WALLET_SERVICE_URL}/api/wallet/deduct`, {
-        userId,
-        amount: entryFee,
-        reason: `Contest Entry: ${contestTitle} (${contestId})`,
-        signupBonusPercentage: signupBonusAllowedPercentage
-      }, {
-        headers: { 'Authorization': req.headers.authorization }
-      });
-      deductionDetails = walletDeductionResponse.data.deductionBreakdown; 
-      transactionId = walletDeductionResponse.data.transactionId;
-    } catch (walletError) {
-      const status = walletError.response?.status || 500;
-      const message = walletError.response?.data?.message || 'Error processing wallet transaction.';
-      return res.status(status).json({ message });
-    }
-    // --- END Wallet Deduction ---
-
-    try {
-        const participation = await ContestParticipation.create({
-            user: userId,
-            matchId,
-            contestId,
-            teamId,
-            deductionBreakdown: deductionDetails,
-            transactionId
+        // ✅ FIX: The placeholder is replaced with the actual call, using the necessary variables.
+        const walletDeductionResponse = await axios.post(`${WALLET_SERVICE_URL}/api/wallet/deduct`, {
+            userId,
+            amount: entryFee, // <-- Used here
+            reason: `Contest Entry: ${contestTitle} (${contestId})`, // <-- Used here
+            signupBonusPercentage: signupBonusAllowedPercentage // <-- Used here
+        }, {
+            headers: { 'Authorization': req.headers.authorization }
         });
+        deductionDetails = walletDeductionResponse.data.deductionBreakdown; 
+        transactionId = walletDeductionResponse.data.transactionId;
+    } catch (walletError) {
+        return res.status(walletError.response?.status || 500).json({ message: walletError.response?.data?.message || 'Error processing wallet transaction.' });
+    }
 
-        // ✅ ATOMIC UPDATE: Safely increment the filledSpots count.
-        await Contest.findByIdAndUpdate(contestId, { $inc: { filledSpots: 1 } });
+    // --- Database Operations with Race Condition Fix ---
+    try {
+        const updatedContest = await Contest.findOneAndUpdate(
+            { _id: contestId, filledSpots: { $lt: totalSpots } },
+            { $inc: { filledSpots: 1 } }
+        );
 
-        // ✅ Notify the Offer Service (This will not crash the main function if it fails)
+        if (!updatedContest) {
+            // Initiate refund because no spot was secured.
+            await axios.post(`${WALLET_SERVICE_URL}/api/wallet/refund`, {
+                transactionId,
+                reason: `Automatic refund: Contest ${contestId} filled up.`
+            }, { headers: { 'Authorization': req.headers.authorization } });
+            return res.status(400).json({ message: 'Contest filled up just as you tried to join. Your entry fee has been refunded.' });
+        }
+
+        const participation = await ContestParticipation.create({
+            user: userId, matchId, contestId, teamId, deductionBreakdown: deductionDetails, transactionId
+        });
+        
+        // Notify other services
         try {
-          console.log("tag here======>",{ userId, matchId, contestId });
-            await axios.post(`${OFFER_SERVICE_URL}/api/offerRoutes/track-progress`, {
-                userId: userId,
-                matchId: matchId,
-                contestId: contestId
-            },
-            {
-              headers: { 'Authorization': `Bearer ${INTERNAL_API_TOKEN}` } // Added auth header
+            await axios.post(`${OFFER_SERVICE_URL}/api/offerRoutes/track-progress`, { userId, matchId, contestId }, {
+                headers: { 'Authorization': `Bearer ${INTERNAL_API_TOKEN}` }
             });
-
         } catch (offerError) {
-            console.error(`[Non-blocking error] Failed to track offer progress for user ${userId} in match ${matchId}:`, offerError.message);
+            console.error(`[Non-blocking error] Failed to track offer progress for user ${userId}:`, offerError.message);
         }
 
         return res.status(201).json({ message: 'Successfully joined contest', participation });
 
     } catch(dbError) {
-        // --- Refund Logic ---
+        // Final safety net for refunds.
         console.error('CRITICAL: DB save failed after wallet deduction. Initiating refund.', dbError);
-        try {
-            await axios.post(`${WALLET_SERVICE_URL}/api/wallet/refund`, {
-                transactionId: transactionId,
-                reason: `Automatic refund: Failed to join contest ${contestId}`
-            }, { headers: { 'Authorization': req.headers.authorization }});
-        } catch (refundError) {
-            console.error(`CRITICAL FAILURE: Automatic refund for transaction ${transactionId} FAILED.`, refundError.message);
-        }
+        await axios.post(`${WALLET_SERVICE_URL}/api/wallet/refund`, {
+            transactionId,
+            reason: `Automatic refund: Failed to join contest ${contestId} due to DB error.`
+        }, { headers: { 'Authorization': req.headers.authorization } });
 
-        if (dbError.code === 11000) {
-            return res.status(400).json({ message: 'You have already joined with this specific team. Your entry fee has been refunded.' });
-        }
         return res.status(500).json({ message: 'Could not join contest due to a database error. Your entry fee has been refunded.' });
     }
-
   } catch (err) {
     console.error('Error in joinContest:', err);
     return res.status(500).json({ message: 'Internal server error' });
@@ -240,100 +239,82 @@ exports.joinContest = async (req, res) => {
 //   }
 
 //   try {
-//     const isMatchUpcoming = await Match.exists({ _id: matchId, dateTimeGMT: { $gt: new Date() } });
-//     if (!isMatchUpcoming) {
-//       return res.status(400).json({ message: "This match is not available for joining or has already started." });
-//     }
-
-//     const team = await Team.findOne({ _id: teamId, user: userId, matchId });
+//     const [isMatchUpcoming, team, baseContestForCloning] = await Promise.all([
+//         Match.exists({ _id: matchId, dateTimeGMT: { $gt: new Date() } }),
+//         Team.findOne({ _id: teamId, user: userId, matchId }),
+//         Contest.findOne({ contestTemplateId, matchId }).populate('contestTemplateId', 'entryFee signupBonusAllowedPercentage title')
+//     ]);
+    
+//     if (!isMatchUpcoming) return res.status(400).json({ message: "This match is not available for joining." });
 //     if (!team) return res.status(400).json({ message: 'Invalid team for this match' });
-    
-//     // Populate contestTemplateId to get entryFee, maxTeamsPerUser, and signupBonusAllowedPercentage
-//     const baseContestForCloning = await Contest.findOne({ contestTemplateId, matchId })
-//                                             .populate('contestTemplateId', 'entryFee maxTeamsPerUser signupBonusAllowedPercentage');
-//     if (!baseContestForCloning) {
-//         return res.status(404).json({ message: 'No contests found for this template and match.'});
-//     }
-    
-//     if (!baseContestForCloning.contestTemplateId || typeof baseContestForCloning.contestTemplateId.entryFee === 'undefined') {
-//       console.error(`Contest template ${contestTemplateId} is missing entryFee.`);
-//       return res.status(500).json({ message: 'Contest entry fee not defined for template.' });
-//     }
-//     const entryFee = baseContestForCloning.contestTemplateId.entryFee;
-//     const signupBonusAllowedPercentageForContest = baseContestForCloning.contestTemplateId.signupBonusAllowedPercentage || 0;
+//     if (!baseContestForCloning) return res.status(404).json({ message: 'No contests found for this template and match.'});
+//     if (!baseContestForCloning.contestTemplateId) return res.status(500).json({ message: 'Contest entry fee not defined for template.' });
 
+//     const { entryFee, signupBonusAllowedPercentage, title: contestTitle } = baseContestForCloning.contestTemplateId;
 
 //     let joinedCount = 0;
 //     let insufficientFundsMessage = '';
 
-//     while (joinedCount < count) {
+//     // ✅ FIX 1: Get all contest INSTANCES the user has already joined for this match.
+//     const existingParticipations = await ContestParticipation.find({ userId, matchId }).select('contestId').lean();
+//     const joinedContestIds = existingParticipations.map(p => p.contestId);
+
+//     for (let i = 0; i < count; i++) {
+//       // ✅ FIX 2: Correct the query to exclude already-joined contests and remove the faulty 'participants' check.
 //       let targetContest = await Contest.findOne({
 //         contestTemplateId: contestTemplateId,
 //         matchId: matchId,
 //         filledSpots: { $lt: baseContestForCloning.totalSpots },
-//         participants: { $ne: userId }
+//         _id: { $nin: joinedContestIds } // Exclude contests we've already joined
 //       }).sort({ filledSpots: -1 });
 
 //       if (!targetContest) {
+//         // Now this will be called correctly when no available spots are found
 //         targetContest = await cloneContest(baseContestForCloning);
-//         if (!targetContest) {
-//             console.log("Could not clone more contests. Stopping batch join.");
-//             break;
-//         }
+//         if (!targetContest) break;
 //       }
       
-//       const alreadyInThisInstance = await ContestParticipation.exists({ user: userId, contestId: targetContest._id });
-//       if(alreadyInThisInstance) {
-//         console.log(`User already in contest ${targetContest._id}. Skipping this instance.`);
-//         continue;
-//       }
-
-//       // --- Wallet Deduction for EACH contest ---
-//       let deductionDetails;
 //       try {
 //         const walletDeductionResponse = await axios.post(`${WALLET_SERVICE_URL}/api/wallet/deduct`, {
-//           userId: userId,
+//           userId,
 //           amount: entryFee,
-//           reason: `Contest Batch Entry: ${targetContest.title} (${targetContest._id})`,
-//           signupBonusPercentage: signupBonusAllowedPercentageForContest // <-- PASS THE PERCENTAGE
-//         }, {
-//           headers: { 'Authorization': req.headers.authorization }
-//         });
+//           reason: `Contest Batch Entry: ${contestTitle} (${targetContest._id})`,
+//           signupBonusPercentage: signupBonusAllowedPercentage
+//         }, { headers: { 'Authorization': req.headers.authorization }});
 
-//         if (walletDeductionResponse.status !== 200) {
-//           console.error('Wallet deduction failed with non-200 status for one contest:', walletDeductionResponse.data);
-//           if (walletDeductionResponse.data && walletDeductionResponse.data.message.includes('Insufficient balance')) {
-//             insufficientFundsMessage = walletDeductionResponse.data.message;
-//             break;
-//           }
-//           continue;
-//         }
-//         console.log(`Funds successfully deducted for contest ${targetContest._id}:`, walletDeductionResponse.data.message);
-//         deductionDetails = walletDeductionResponse.data.deductionBreakdown;
-
-//         targetContest.participants.push(userId);
-//         targetContest.filledSpots += 1;
-//         await targetContest.save();
+//         const { deductionBreakdown, transactionId } = walletDeductionResponse.data;
 
 //         await ContestParticipation.create({
 //           user: userId,
 //           matchId,
 //           contestId: targetContest._id,
 //           teamId,
-//           deductionBreakdown: deductionDetails
+//           deductionBreakdown,
+//           transactionId
 //         });
+        
+//         // Add the newly joined contest to our exclusion list for the next loop
+//         joinedContestIds.push(targetContest._id);
 
+//         await Contest.findByIdAndUpdate(targetContest._id, { $inc: { filledSpots: 1 } });
 //         joinedCount++;
 
+//         try {
+//           console.log("tag here======>1",{ userId, matchId });
+//             await axios.post(`${OFFER_SERVICE_URL}/api/offerRoutes/track-progress`, { userId, matchId },
+//               {
+//                 headers: { 'Authorization': `Bearer ${INTERNAL_API_TOKEN}` } // Added auth header
+//               }
+//             );
+//         } catch (offerError) {
+//             console.error(`[Non-blocking error] Failed to track offer progress during batch join:`, offerError.message);
+//         }
+
 //       } catch (walletError) {
-//         if (walletError.response && walletError.response.data && walletError.response.data.message) {
-//           console.error('Wallet service error for one contest:', walletError.response.data.message);
-//           if (walletError.response.data.message.includes('Insufficient balance')) {
-//              insufficientFundsMessage = walletError.response.data.message;
-//              break;
-//           }
+//         if (walletError.response?.data?.message.includes('Insufficient balance')) {
+//            insufficientFundsMessage = walletError.response.data.message;
 //         } else {
-//           console.error('Error connecting to Wallet Service or unexpected error during batch join:', walletError.message);
+//            console.error('Wallet service error during batch join:', walletError.message);
 //         }
 //         break;
 //       }
@@ -341,19 +322,16 @@ exports.joinContest = async (req, res) => {
 
 //     let responseMessage = `Successfully joined ${joinedCount} contest(s)`;
 //     if (joinedCount < count) {
-//       if (insufficientFundsMessage) {
-//         responseMessage += `. ${insufficientFundsMessage}`;
-//       } else {
-//         responseMessage += `. Some contests could not be joined due to various reasons (e.g., filled up, invalid contest, or other wallet issues).`;
-//       }
+//       responseMessage += insufficientFundsMessage ? `. Stopped due to insufficient funds.` : `. Some contests could not be joined.`;
 //     }
 //     return res.status(200).json({ message: responseMessage, joinedCount });
 
 //   } catch (err) {
 //     console.error('Error in joinMultipleContests:', err);
-//     return res.status(500).json({ message: 'Internal server error', error: err.message });
+//     return res.status(500).json({ message: 'Internal server error' });
 //   }
 // };
+
 
 exports.joinMultipleContests = async (req, res) => {
   const { matchId, teamId, count, contestTemplateId } = req.body;
@@ -367,81 +345,86 @@ exports.joinMultipleContests = async (req, res) => {
     const [isMatchUpcoming, team, baseContestForCloning] = await Promise.all([
         Match.exists({ _id: matchId, dateTimeGMT: { $gt: new Date() } }),
         Team.findOne({ _id: teamId, user: userId, matchId }),
-        Contest.findOne({ contestTemplateId, matchId }).populate('contestTemplateId', 'entryFee signupBonusAllowedPercentage title')
+        Contest.findOne({ contestTemplateId, matchId }).populate('contestTemplateId', 'entryFee signupBonusAllowedPercentage title totalSpots')
     ]);
     
     if (!isMatchUpcoming) return res.status(400).json({ message: "This match is not available for joining." });
     if (!team) return res.status(400).json({ message: 'Invalid team for this match' });
     if (!baseContestForCloning) return res.status(404).json({ message: 'No contests found for this template and match.'});
-    if (!baseContestForCloning.contestTemplateId) return res.status(500).json({ message: 'Contest entry fee not defined for template.' });
 
-    const { entryFee, signupBonusAllowedPercentage, title: contestTitle } = baseContestForCloning.contestTemplateId;
+    const { entryFee, signupBonusAllowedPercentage, title: contestTitle, totalSpots } = baseContestForCloning.contestTemplateId;
 
     let joinedCount = 0;
     let insufficientFundsMessage = '';
-
-    // ✅ FIX 1: Get all contest INSTANCES the user has already joined for this match.
-    const existingParticipations = await ContestParticipation.find({ userId, matchId }).select('contestId').lean();
-    const joinedContestIds = existingParticipations.map(p => p.contestId);
+    const joinedContestIds = (await ContestParticipation.find({ userId, matchId }).select('contestId').lean()).map(p => p.contestId);
 
     for (let i = 0; i < count; i++) {
-      // ✅ FIX 2: Correct the query to exclude already-joined contests and remove the faulty 'participants' check.
       let targetContest = await Contest.findOne({
-        contestTemplateId: contestTemplateId,
-        matchId: matchId,
-        filledSpots: { $lt: baseContestForCloning.totalSpots },
-        _id: { $nin: joinedContestIds } // Exclude contests we've already joined
-      }).sort({ filledSpots: -1 });
-
-      if (!targetContest) {
-        // Now this will be called correctly when no available spots are found
-        targetContest = await cloneContest(baseContestForCloning);
-        if (!targetContest) break;
-      }
+        contestTemplateId, matchId,
+        filledSpots: { $lt: totalSpots },
+        _id: { $nin: joinedContestIds }
+      });
       
+      if (!targetContest) {
+        targetContest = await cloneContest(baseContestForCloning);
+        if (!targetContest) break; // Stop if we can't find or create a contest
+      }
+
+      let transactionId; // Keep track of transaction ID for potential refund
       try {
         const walletDeductionResponse = await axios.post(`${WALLET_SERVICE_URL}/api/wallet/deduct`, {
-          userId,
-          amount: entryFee,
-          reason: `Contest Batch Entry: ${contestTitle} (${targetContest._id})`,
-          signupBonusPercentage: signupBonusAllowedPercentage
+            userId, amount: entryFee, reason: `Batch Entry: ${contestTitle} (${targetContest._id})`, signupBonusPercentage: signupBonusAllowedPercentage
         }, { headers: { 'Authorization': req.headers.authorization }});
+        
+        transactionId = walletDeductionResponse.data.transactionId; // Get transactionId right after deduction
 
-        const { deductionBreakdown, transactionId } = walletDeductionResponse.data;
+        // ✅ FIX: Atomically secure the spot BEFORE creating the participation record.
+        const updatedContest = await Contest.findOneAndUpdate(
+            { _id: targetContest._id, filledSpots: { $lt: totalSpots } },
+            { $inc: { filledSpots: 1 } }
+        );
+
+        if (!updatedContest) {
+            // If contest filled up, refund and try to find another contest in the next loop iteration.
+            throw new Error('Contest filled up atomically'); // Throw a custom error to trigger refund
+        }
 
         await ContestParticipation.create({
-          user: userId,
-          matchId,
-          contestId: targetContest._id,
-          teamId,
-          deductionBreakdown,
+          user: userId, matchId, contestId: targetContest._id, teamId,
+          deductionBreakdown: walletDeductionResponse.data.deductionBreakdown,
           transactionId
         });
         
-        // Add the newly joined contest to our exclusion list for the next loop
-        joinedContestIds.push(targetContest._id);
-
-        await Contest.findByIdAndUpdate(targetContest._id, { $inc: { filledSpots: 1 } });
+        joinedContestIds.push(targetContest._id); // Add to exclusion list for this run
         joinedCount++;
-
+        
+        // Non-blocking offer tracking
         try {
-          console.log("tag here======>1",{ userId, matchId });
-            await axios.post(`${OFFER_SERVICE_URL}/api/offerRoutes/track-progress`, { userId, matchId },
-              {
-                headers: { 'Authorization': `Bearer ${INTERNAL_API_TOKEN}` } // Added auth header
-              }
-            );
+            await axios.post(`${OFFER_SERVICE_URL}/api/offerRoutes/track-progress`, { userId, matchId }, { headers: { 'Authorization': `Bearer ${INTERNAL_API_TOKEN}` } });
         } catch (offerError) {
             console.error(`[Non-blocking error] Failed to track offer progress during batch join:`, offerError.message);
         }
 
-      } catch (walletError) {
-        if (walletError.response?.data?.message.includes('Insufficient balance')) {
-           insufficientFundsMessage = walletError.response.data.message;
-        } else {
-           console.error('Wallet service error during batch join:', walletError.message);
-        }
-        break;
+      } catch (error) {
+          // ✅ FIX: Centralized error handling and refund logic inside the loop.
+          if (error.response?.data?.message.includes('Insufficient balance')) {
+              insufficientFundsMessage = error.response.data.message;
+              break; // Stop the loop entirely if out of funds
+          }
+          
+          if (transactionId) {
+              // If we have a transactionId, a deduction happened. We MUST refund.
+              console.error(`Error during batch join for contest ${targetContest._id}. Refunding transaction ${transactionId}. Reason: ${error.message}`);
+              await axios.post(`${WALLET_SERVICE_URL}/api/wallet/refund`, {
+                  transactionId,
+                  reason: `Automatic refund: Failed during batch join for contest ${targetContest._id}`
+              }, { headers: { 'Authorization': req.headers.authorization } });
+          } else {
+              console.error('An error occurred before wallet deduction in batch join:', error.message);
+          }
+          
+          if (insufficientFundsMessage) break; // If the error was insufficient funds, stop.
+          // Otherwise, continue the loop to try the next available contest.
       }
     }
 

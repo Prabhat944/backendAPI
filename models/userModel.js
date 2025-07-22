@@ -48,7 +48,7 @@ const userSchema = new mongoose.Schema({
     enum: ['email', 'otp'],
     required: true,
   },
-
+  token: { type: String }, 
   // ✅ --- START OF KYC FIELDS ADDED ---
   // (As per your provided desired structure, combining elements from both our discussions)
 

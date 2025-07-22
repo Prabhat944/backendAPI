@@ -24,9 +24,10 @@ const teamRoutes = require('./route/teamRoute');
 const statsRoutes = require('./route/statsRoutes');
 const contestCalculateRoutes = require('./route/contestCalculateRoute');
 const profileRoute = require('./route/profileRoutes')
-const checkContestRoute = require('./route/contestCheckRoute')
+const checkContestRoute = require('./route/contestControllerRoute')
 const pointRoutes = require('./route/pointRoute')
-const contestRoutes = require('./route/contest');
+const contest = require('./route/contest');
+const contestControllerRoutes = require('./route/contestControllerRoute');
 const wallerRoute = require('./route/walletRoute')
 const supportTicketRoute = require('./route/supportTicketRoute')
 const supportEmailRoute = require('./route/supportEmailRoute');
@@ -61,7 +62,7 @@ app.use('/api/v1/contest', contestCalculateRoutes);
 app.use('/api/v1/profile', profileRoute)
 app.use('/api/v1/check_contest', checkContestRoute)
 app.use('/api/v1/point', pointRoutes)
-app.use('/api/contest', contestRoutes)
+app.use('/api/contest', contest)
 app.use('/api/v1/wallet', wallerRoute)
 app.use('/api/v1/ticket', supportTicketRoute)
 app.use('/api/v1/supportEmail', supportEmailRoute)
@@ -69,6 +70,7 @@ app.use('/api/v1/kyc', kycRoutes); // Use the new KYC routes
 app.use('/api/v1/playerStats', playerPointRoutes);
 app.use('/api/v1/offer', offerRoutes); // Use the offer routes
 app.use('/api/v1/leaderboards', leaderboardRoutes);
+app.use('/api/v1/contestController', contestControllerRoutes);
 // app.use('/api/v1/series', seriesRoutes);
   
 app.get('/', (req, res) => {

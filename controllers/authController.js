@@ -11,7 +11,7 @@ const axios = require('axios');
 const mongoose = require('mongoose');
 const cloudinary = require('cloudinary').v2;
 const fs = require('fs').promises;
-
+const redisClient = require('../utils/redisClient');
 const BlacklistedToken = require('../models/BlacklistedToken');
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -260,7 +260,7 @@ exports.getUserById = async (req, res) => {
 };
 
   // Verify OTP 
-exports.verifyOtp = async (req, res) => {
+  exports.verifyOtp = async (req, res) => {
     const { mobile, otp } = req.body;
     try {
       const record = await OTP.findOne({ mobile, otp });
@@ -275,10 +275,24 @@ exports.verifyOtp = async (req, res) => {
         return res.status(404).json({ message: 'User not found. Please resend OTP.' });
       }
   
-      const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '1d' });
-      res.json({ token });
+      // 👉 Generate a new key card (token)
+      const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '7d' });
+      await redisClient.set(`session:${user._id}`, token);
+      // ✅ --- THIS IS THE MOST IMPORTANT STEP --- ✅
+      // Reprogram the lock: Save this new key to the user's document.
+      // Any old key is now invalid.
+      user.token = token;
+      await user.save();
+      console.log(`[DEBUG] Saved token for ${user.mobile}. New token is: ...${token.slice(-10)}`);
+      // ✅ --- END OF THE IMPORTANT STEP --- ✅
+  
+      await OTP.deleteOne({ _id: record._id });
+  
+      // Give the new key to the user
+      res.json({ token, message: "Login successful! You are now logged in on this device." });
   
     } catch (err) {
+      console.error("OTP Verification Error:", err);
       res.status(500).json({ message: 'OTP verification failed' });
     }
 };

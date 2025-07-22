@@ -18,25 +18,31 @@ const {
 } = require('../controllers/authController');
 const authMiddleware = require('../middleware/authMiddleware');
 const upload = multer({ dest: 'uploads/' });
-
+const {  
+  otpLimiter,
+  loginLimiter,
+  uploadLimiter,
+  generalLimiter // For general Browse actions
+} = require('../middleware/rateLimiters');
 
 console.log('---------s')
 router.post('/signup', signup);
 router.post('/login', login);
 router.post('/request-reset', requestPasswordReset);
 router.post('/reset-password/:token', resetPassword);
-router.post('/send-otp', sendOtp);
-router.post('/verify-otp', verifyOtp);
-router.post('/google-login', googleLogin);
-router.post('/facebook-login', facebookLogin);
+router.post('/send-otp', otpLimiter, sendOtp);
+router.post('/verify-otp', loginLimiter, verifyOtp);
+router.post('/google-login', loginLimiter, googleLogin);
+router.post('/facebook-login', loginLimiter, facebookLogin);
 router.post('/logout', authMiddleware, logout);
 router.post(
   '/upload-profile-image',
   authMiddleware,
+  uploadLimiter,
   upload.single('profileImage'),
   uploadProfileImage
 );
-router.post('/users/validate-token', validateToken);
-router.get('/search', authMiddleware, searchUsers);
-router.get('/:id', authMiddleware, getUserDetailsById);
+router.post('/users/validate-token', generalLimiter, validateToken);
+router.get('/search', authMiddleware, generalLimiter, searchUsers);
+router.get('/:id', authMiddleware, generalLimiter, getUserDetailsById);
 module.exports = router;
