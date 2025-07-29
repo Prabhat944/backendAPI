@@ -24,7 +24,7 @@ const sensitiveActionLimiter = rateLimit({
 // Allows only 5 requests per 10 minutes.
 const otpLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
-  limit: 5,
+  limit: 15,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: 'Too many OTP requests. Please try again after 10 minutes.'

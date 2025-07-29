@@ -40,7 +40,10 @@ const cors = require('cors')
 require('./config/cloudinary');
 
 const app = express();
+const logger = require('./utils/logger'); // Make sure logger is imported
 
+// ADD THIS LINE
+logger.info('--- APPLICATION BOOT --- This is a test log from startup.');
 // Connect to MongoDB
 connectDB();
 

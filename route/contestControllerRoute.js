@@ -11,7 +11,7 @@ const { getContestsForMatchCheck } = require('../controllers/contestCheckControl
 router.get(
     '/match/:matchId', generalLimiter, contestController.getContestsByMatchId);
 router.get('/check-contests', generalLimiter, getContestsForMatchCheck); // Or with auth middleware
-router.post('/join', authMiddleware, sensitiveActionLimiter, contestController.joinContest);
+router.post('/join', authMiddleware, contestController.joinContest);
 router.post('/multi-join', authMiddleware, sensitiveActionLimiter, contestController.joinMultipleContests);
 router.post('/switch-team', authMiddleware, sensitiveActionLimiter,  contestController.switchTeam);
 router.post('/contests/join-team-contest', authMiddleware, sensitiveActionLimiter, contestController.joinTeamContest); // Add this line
